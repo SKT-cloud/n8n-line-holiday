@@ -1,6 +1,4 @@
-import { fetchSubjectGroups, submitHoliday } from "./api.js";
-
-const DRAFT_KEY = "holiday_draft_v1";
+import { buildHolidayPayload, buildCancelPayload, toIsoBangkokStartEnd } from "./api.js";
 
 function qs(id) {
   const el = document.getElementById(id);
@@ -8,414 +6,325 @@ function qs(id) {
   return el;
 }
 
-function setMsg(el, type, text) {
-  el.className = "msg" + (type === "ok" ? " msg--ok" : type === "err" ? " msg--err" : "");
+function setText(id, text) {
+  const el = document.getElementById(id);
+  if (!el) return;
   el.textContent = text || "";
 }
 
-function toISOAllDayStart(dateStr) {
-  return `${dateStr}T00:00:00+07:00`;
+function showMsg(text, type = "info") {
+  const msg = qs("msg");
+  msg.className = `msg msg--${type}`;
+  msg.textContent = text || "";
 }
 
-function toISOAllDayEnd(dateStr) {
-  return `${dateStr}T23:59:59+07:00`;
+function setSubmitting(isSubmitting) {
+  const btn = qs("submitBtn");
+  btn.disabled = isSubmitting;
+  btn.dataset.loading = isSubmitting ? "1" : "0";
+  btn.textContent = isSubmitting ? "กำลังบันทึก…" : "บันทึก";
 }
 
-function formatDDMMYYYY(dateStr) {
-  if (!dateStr) return "";
-  const [y, m, d] = dateStr.split("-");
-  if (!y || !m || !d) return "";
-  return `${d}/${m}/${y}`;
-}
+function setModeUI(mode) {
+  const allDayBox = qs("allDayBox");
+  const cancelBox = qs("cancelBox");
 
-function readDraft() {
-  try {
-    const raw = sessionStorage.getItem(DRAFT_KEY);
-    if (!raw) return null;
-    return JSON.parse(raw);
-  } catch {
-    return null;
+  if (mode === "cancel_subject") {
+    allDayBox.classList.add("hidden");
+    cancelBox.classList.remove("hidden");
+  } else {
+    cancelBox.classList.add("hidden");
+    allDayBox.classList.remove("hidden");
   }
 }
 
-function writeDraft(draft) {
-  sessionStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+function normalizeDayOrder(day) {
+  const order = ["จันทร์","อังคาร","พุธ","พฤหัสบดี","ศุกร์","เสาร์","อาทิตย์"];
+  const idx = order.indexOf(day);
+  return idx === -1 ? 999 : idx;
 }
 
-function clearDraft() {
-  sessionStorage.removeItem(DRAFT_KEY);
+// ---- Subjects Block Picker ----
+function renderSubjects(groups, onPick, state) {
+  const subjectsListEl = qs("subjectsList");
+  subjectsListEl.innerHTML = "";
+
+  groups
+    .slice()
+    .sort((a, b) => normalizeDayOrder(a.day) - normalizeDayOrder(b.day))
+    .forEach((g) => {
+      const dayWrap = document.createElement("div");
+      dayWrap.className = "dayGroup";
+
+      const dayTitle = document.createElement("div");
+      dayTitle.className = "dayTitle";
+      dayTitle.textContent = g.day;
+
+      dayWrap.appendChild(dayTitle);
+
+      (g.options || []).forEach((opt) => {
+        const item = document.createElement("button");
+        item.type = "button";
+        item.className = "subjectItem";
+        item.dataset.subjectId = opt.id;
+
+        const isSelected = state.selectedSubject?.id === opt.id;
+        if (isSelected) item.classList.add("is-selected");
+
+        // ให้ข้อมูลที่ค้นหาได้แน่น ๆ
+        const searchable = [
+          opt.time,
+          opt.code,
+          opt.name,
+          opt.type,
+          opt.day,
+          opt.section
+        ].filter(Boolean).join(" ").toLowerCase();
+        item.dataset.search = searchable;
+
+        item.innerHTML = `
+          <div class="subjectRow">
+            <div class="subjectTime">${opt.time || ""}</div>
+            <div class="subjectMain">
+              <div class="subjectCode">${opt.code || ""}</div>
+              <div class="subjectName">${opt.name || ""}</div>
+            </div>
+            <div class="subjectType">${opt.type || ""}</div>
+          </div>
+        `;
+
+        item.addEventListener("click", () => onPick(opt));
+        dayWrap.appendChild(item);
+      });
+
+      subjectsListEl.appendChild(dayWrap);
+    });
 }
 
-function escapeHtml(s) {
-  return String(s)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
+function applySubjectSearch() {
+  const q = qs("subjectSearch").value.trim().toLowerCase();
+  const items = qs("subjectsList").querySelectorAll(".subjectItem");
+  items.forEach((el) => {
+    const hit = !q || (el.dataset.search || "").includes(q);
+    el.style.display = hit ? "" : "none";
+  });
 }
 
-function normalize(s) {
-  return String(s || "").toLowerCase().trim();
+function setSelectedSubjectUI(subject) {
+  const box = qs("subjectSelected");
+  if (!subject) {
+    box.classList.add("hidden");
+    box.textContent = "";
+    return;
+  }
+
+  box.classList.remove("hidden");
+  box.innerHTML = `
+    <div class="selected__title">เลือกแล้ว ✅</div>
+    <div class="selected__line">${subject.day || ""} • ${subject.time || ""}</div>
+    <div class="selected__line"><b>${subject.code || ""}</b> ${subject.name || ""} (${subject.type || ""})</div>
+  `;
 }
 
-function shortLabel(opt) {
-  const m = opt?.meta || {};
-  const start = m.start_time || "";
-  const end = m.end_time || "";
-  const code = m.subject_code || "";
-  const name = m.subject_name || "";
-  const type = m.type || "";
-  const time = start && end ? `${start}-${end}` : start || end || "";
-
-  return { time, code, name, type };
-}
-
+// ---- Main ----
 export function initHolidayForm({ userId, displayName, subjectsUrl, submitUrl, onDone }) {
-  const titleEl = qs("title");
-  const modeEl = qs("mode");
+  const who = qs("who");
+  who.textContent = displayName ? `คุณ ${displayName}` : "ผู้ใช้ LINE";
 
-  const allDayBox = qs("allDayBox");
+  const modeEl = qs("mode");
+  const resetBtn = qs("resetBtn");
+
   const startDateEl = qs("startDate");
   const endDateEl = qs("endDate");
-  const startPretty = qs("startDatePretty");
-  const endPretty = qs("endDatePretty");
-
-  const cancelBox = qs("cancelBox");
-  const subjectsListEl = qs("subjectsList");
-  const subjectSearchEl = qs("subjectSearch");
-  const subjectSelectedEl = qs("subjectSelected");
-  const cancelDateBox = qs("cancelDateBox");
   const cancelDateEl = qs("cancelDate");
-  const cancelPretty = qs("cancelDatePretty");
+  const cancelDateBox = qs("cancelDateBox");
+  const titleEl = qs("title");
 
-  const submitBtn = qs("submitBtn");
-  const resetBtn = qs("resetBtn");
-  const msgEl = qs("msg");
-  const whoEl = qs("who");
+  const state = {
+    groups: [],
+    selectedSubject: null,
+    submitting: false,
+  };
 
-  whoEl.textContent = displayName ? `ล็อกอินแล้ว: ${displayName}` : "ล็อกอินแล้ว ✅";
-
-  // Local UI state for subject options and current selection.
-  let groupsCache = [];
-  let selectedSubjectId = "";
-
-  function getDraftFromUI() {
-    return {
-      title: titleEl.value || "",
-      mode: modeEl.value || "all_day",
-      startDate: startDateEl.value || "",
-      endDate: endDateEl.value || "",
-      subjectId: selectedSubjectId || "",
-      cancelDate: cancelDateEl.value || "",
-      search: subjectSearchEl.value || ""
-    };
-  }
-
-  function applyDraftToUI(draft) {
-    if (!draft) return;
-    titleEl.value = draft.title || "";
-    modeEl.value = draft.mode || "all_day";
-    startDateEl.value = draft.startDate || "";
-    endDateEl.value = draft.endDate || "";
-    cancelDateEl.value = draft.cancelDate || "";
-    subjectSearchEl.value = draft.search || "";
-    selectedSubjectId = draft.subjectId || "";
-  }
-
-  function refreshPrettyDates() {
-    const startPrettyText = startDateEl.value ? formatDDMMYYYY(startDateEl.value) : "";
-    const endPrettyText = endDateEl.value ? formatDDMMYYYY(endDateEl.value) : "";
-    startPretty.textContent = startPrettyText ? `เลือก: ${startPrettyText}` : "";
-    endPretty.textContent = endPrettyText
-      ? `เลือก: ${endPrettyText}`
-      : startPrettyText
-        ? "เว้นช่องวันที่สิ้นสุดได้ หากหยุดวันเดียว"
-        : "";
-
-    cancelPretty.textContent = cancelDateEl.value ? `เลือก: ${formatDDMMYYYY(cancelDateEl.value)}` : "";
-  }
-
-  function setModeUI() {
-    const mode = modeEl.value;
-    if (mode === "all_day") {
-      allDayBox.classList.remove("hidden");
-      cancelBox.classList.add("hidden");
-    } else {
-      allDayBox.classList.add("hidden");
-      cancelBox.classList.remove("hidden");
-    }
-    validate();
-    writeDraft(getDraftFromUI());
-  }
-
-  // Check required values before enabling submit.
-  function validate() {
-    setMsg(msgEl, "", "");
-
-    const mode = modeEl.value;
-    let ok = false;
-
-    if (mode === "all_day") {
-      ok = !!startDateEl.value;
-      if (startDateEl.value && endDateEl.value && endDateEl.value < startDateEl.value) {
-        ok = false;
-        setMsg(msgEl, "err", "วันที่สิ้นสุดต้องไม่ก่อนวันที่เริ่ม ❌");
-      }
-    } else {
-      ok = !!selectedSubjectId && !!cancelDateEl.value;
-    }
-
-    submitBtn.disabled = !ok;
-  }
-
-  function renderSelectedInfo() {
-    if (!selectedSubjectId) {
-      subjectSelectedEl.classList.add("hidden");
-      subjectSelectedEl.innerHTML = "";
-      return;
-    }
-
-    let found = null;
-    for (const g of groupsCache) {
-      for (const opt of g.options || []) {
-        if (opt.subject_id === selectedSubjectId) {
-          found = opt;
-          break;
-        }
-      }
-      if (found) break;
-    }
-
-    if (!found) {
-      subjectSelectedEl.classList.remove("hidden");
-      subjectSelectedEl.innerHTML = `<b>เลือกแล้ว:</b> ${escapeHtml(selectedSubjectId)}`;
-      return;
-    }
-
-    const { time, code, name, type } = shortLabel(found);
-    subjectSelectedEl.classList.remove("hidden");
-    subjectSelectedEl.innerHTML =
-      `<b>เลือกแล้ว:</b> ${escapeHtml(time)} • ${escapeHtml(code)} • ${escapeHtml(name)} • ${escapeHtml(type)}`;
-  }
-
-  function setActiveButton() {
-    subjectsListEl
-      .querySelectorAll(".subjectItem.isActive")
-      .forEach((el) => el.classList.remove("isActive"));
-
-    if (!selectedSubjectId) return;
-
-    const btn = subjectsListEl.querySelector(`[data-subject-id="${CSS.escape(selectedSubjectId)}"]`);
-    if (btn) btn.classList.add("isActive");
-  }
-
-  function matchesSearch(opt, q) {
-    if (!q) return true;
-    const m = opt?.meta || {};
-    const hay = normalize(
-      [m.subject_code, m.subject_name, m.type, m.start_time, m.end_time, m.day]
-        .filter(Boolean)
-        .join(" ")
-    );
-    return hay.includes(q);
-  }
-
-  // Render grouped subject buttons and bind click handlers.
-  function buildSubjectsBlocks(groups) {
-    const q = normalize(subjectSearchEl.value);
-
-    let html = "";
-    let totalShown = 0;
-
-    for (const g of groups) {
-      const day = g.day || "อื่นๆ";
-      const options = (g.options || []).filter((opt) => matchesSearch(opt, q));
-      if (options.length === 0) continue;
-
-      html += `
-        <div class="dayGroup">
-          <div class="dayHeader">${escapeHtml(day)}</div>
-      `;
-
-      for (const opt of options) {
-        const { time, code, name, type } = shortLabel(opt);
-        html += `
-          <button type="button" class="subjectItem" data-subject-id="${escapeHtml(opt.subject_id)}">
-            <div class="subjectTime">${escapeHtml(time || "--:--- --:--")}</div>
-            <div class="subjectMain">
-              <div class="subjectLine1">
-                <span class="subjectCode">${escapeHtml(code || "-")}</span>
-                <span class="subjectTypePill">${escapeHtml(type || "-")}</span>
-              </div>
-              <div class="subjectName" title="${escapeHtml(name)}">${escapeHtml(name || "-")}</div>
-            </div>
-          </button>
-        `;
-        totalShown++;
-      }
-
-      html += `</div>`;
-    }
-
-    if (totalShown === 0) {
-      html = `<div class="subjects__loading">ไม่พบวิชาที่ค้นหา 😅</div>`;
-    }
-
-    subjectsListEl.innerHTML = html;
-    subjectsListEl.querySelectorAll(".subjectItem").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        selectedSubjectId = btn.getAttribute("data-subject-id") || "";
-        cancelDateBox.classList.remove("hidden");
-        setActiveButton();
-        renderSelectedInfo();
-        validate();
-        writeDraft(getDraftFromUI());
-      });
-    });
-
-    setActiveButton();
-  }
-
-  async function loadSubjectsAndRender() {
-    subjectsListEl.innerHTML = `<div class="subjects__loading">กำลังโหลดรายชื่อวิชา…</div>`;
-
-    try {
-      const groups = await fetchSubjectGroups({ subjectsUrl, userId });
-      groupsCache = Array.isArray(groups) ? groups : [];
-      buildSubjectsBlocks(groupsCache);
-
-      if (selectedSubjectId) {
-        cancelDateBox.classList.remove("hidden");
-        setActiveButton();
-        renderSelectedInfo();
-      } else {
-        cancelDateBox.classList.add("hidden");
-        renderSelectedInfo();
-      }
-
-      validate();
-    } catch (e) {
-      subjectsListEl.innerHTML = `<div class="subjects__loading" style="color:#b00020">โหลดรายชื่อวิชาไม่สำเร็จ ❌</div>`;
-      setMsg(msgEl, "err", String(e?.message || e));
-    }
-  }
-
-  const draft = readDraft();
-  applyDraftToUI(draft);
-  refreshPrettyDates();
-  setModeUI();
+  // UI init
+  setModeUI(modeEl.value);
+  showMsg("", "info");
 
   modeEl.addEventListener("change", () => {
-    setModeUI();
-    if (modeEl.value === "cancel_subject") {
-      cancelDateBox.classList.toggle("hidden", !selectedSubjectId);
-      renderSelectedInfo();
-    }
-  });
-
-  titleEl.addEventListener("input", () => writeDraft(getDraftFromUI()));
-
-  startDateEl.addEventListener("change", () => {
-    refreshPrettyDates();
+    setModeUI(modeEl.value);
+    showMsg("", "info");
     validate();
-    writeDraft(getDraftFromUI());
-  });
-
-  endDateEl.addEventListener("change", () => {
-    refreshPrettyDates();
-    validate();
-    writeDraft(getDraftFromUI());
-  });
-
-  cancelDateEl.addEventListener("change", () => {
-    refreshPrettyDates();
-    validate();
-    writeDraft(getDraftFromUI());
-  });
-
-  subjectSearchEl.addEventListener("input", () => {
-    buildSubjectsBlocks(groupsCache);
-    setActiveButton();
-    renderSelectedInfo();
-    writeDraft(getDraftFromUI());
   });
 
   resetBtn.addEventListener("click", () => {
     titleEl.value = "";
-    modeEl.value = "all_day";
     startDateEl.value = "";
     endDateEl.value = "";
     cancelDateEl.value = "";
-    subjectSearchEl.value = "";
-    selectedSubjectId = "";
+
+    state.selectedSubject = null;
+    setSelectedSubjectUI(null);
     cancelDateBox.classList.add("hidden");
-    clearDraft();
 
-    const startPicker = startDateEl._flatpickr;
-    if (startPicker) startPicker.clear();
-    const endPicker = endDateEl._flatpickr;
-    if (endPicker) endPicker.clear();
-    const cancelPicker = cancelDateEl._flatpickr;
-    if (cancelPicker) cancelPicker.clear();
+    // รีเรนเดอร์เพื่อเคลียร์ highlight
+    if (state.groups.length) {
+      renderSubjects(state.groups, pickSubject, state);
+      applySubjectSearch();
+    }
 
-    refreshPrettyDates();
-    setModeUI();
-    renderSelectedInfo();
-    setMsg(msgEl, "", "");
-    buildSubjectsBlocks(groupsCache);
+    showMsg("ล้างฟอร์มแล้ว ✅", "info");
     validate();
   });
 
-  // Build payload and submit to n8n endpoint.
-  submitBtn.addEventListener("click", async () => {
-    submitBtn.disabled = true;
-    setMsg(msgEl, "", "กำลังบันทึก...");
+  qs("subjectSearch").addEventListener("input", () => applySubjectSearch());
 
+  function pickSubject(opt) {
+    state.selectedSubject = opt;
+    setSelectedSubjectUI(opt);
+
+    // highlight selected
+    renderSubjects(state.groups, pickSubject, state);
+    applySubjectSearch();
+
+    cancelDateBox.classList.remove("hidden");
+    validate();
+  }
+
+  async function loadSubjects() {
+    try {
+      showMsg("กำลังโหลดรายชื่อวิชา…", "info");
+      const res = await fetch(`${subjectsUrl}?user_id=${encodeURIComponent(userId)}`, {
+        method: "GET",
+        headers: { "Accept": "application/json" }
+      });
+
+      if (!res.ok) throw new Error(`โหลดวิชาไม่สำเร็จ (${res.status})`);
+      const data = await res.json();
+
+      state.groups = Array.isArray(data) ? data : [];
+      renderSubjects(state.groups, pickSubject, state);
+      applySubjectSearch();
+
+      showMsg("", "info");
+    } catch (e) {
+      showMsg(`โหลดวิชาไม่สำเร็จ: ${String(e.message || e)}`, "error");
+      // ให้ยังใช้งาน all_day ได้ต่อ
+    } finally {
+      validate();
+    }
+  }
+
+  function validate() {
+    const btn = qs("submitBtn");
     const mode = modeEl.value;
-    const title = titleEl.value?.trim() || null;
-    let payload;
 
-    if (mode === "all_day") {
-      const start = startDateEl.value;
-      const end = endDateEl.value || start;
-      payload = {
-        user_id: userId,
-        type: "holiday",
-        all_day: 1,
-        start_at: toISOAllDayStart(start),
-        end_at: toISOAllDayEnd(end),
-        title,
-        note: null,
-        reminders: []
-      };
-    } else {
-      const date = cancelDateEl.value;
-      payload = {
-        user_id: userId,
-        type: "cancel",
-        subject_id: selectedSubjectId,
-        all_day: 1,
-        start_at: toISOAllDayStart(date),
-        end_at: toISOAllDayEnd(date),
-        title,
-        note: null,
-        reminders: []
-      };
+    if (state.submitting) {
+      btn.disabled = true;
+      return;
     }
 
+    if (mode === "cancel_subject") {
+      const ok = !!state.selectedSubject && !!cancelDateEl.value;
+      btn.disabled = !ok;
+      return;
+    }
+
+    // all_day
+    const ok = !!startDateEl.value;
+    btn.disabled = !ok;
+  }
+
+  startDateEl.addEventListener("change", validate);
+  endDateEl.addEventListener("change", validate);
+  cancelDateEl.addEventListener("change", validate);
+  titleEl.addEventListener("input", validate);
+
+  // ---- Submit handler (จุดที่คุณบอก “ต่อไปตอนกดบันทึก()”) ----
+  qs("submitBtn").addEventListener("click", async () => {
+    if (state.submitting) return;
+
     try {
-      const res = await submitHoliday({ submitUrl, payload });
-      clearDraft();
-      setMsg(msgEl, "ok", "บันทึกสำเร็จ ✅");
-      try {
-        onDone?.(res);
-      } catch {}
+      validate();
+      if (qs("submitBtn").disabled) {
+        showMsg("กรอกข้อมูลให้ครบก่อนนะ 🙂", "error");
+        return;
+      }
+
+      state.submitting = true;
+      setSubmitting(true);
+      showMsg("กำลังบันทึก…", "info");
+
+      const mode = modeEl.value;
+      const title = titleEl.value.trim() || null;
+
+      let payload;
+
+      if (mode === "cancel_subject") {
+        const date = cancelDateEl.value;
+        const { start_at, end_at } = toIsoBangkokStartEnd(date, date);
+
+        payload = {
+          user_id: userId,
+          type: "cancel",
+          subject_id: state.selectedSubject.id, // composite id
+          all_day: 1,
+          start_at,
+          end_at,
+          title: title || `${state.selectedSubject.code} ${state.selectedSubject.name}`,
+          note: null,
+          reminders: []
+        };
+      } else {
+        const start = startDateEl.value;
+        const end = endDateEl.value || start;
+        const { start_at, end_at } = toIsoBangkokStartEnd(start, end);
+
+        payload = {
+          user_id: userId,
+          type: "holiday",
+          subject_id: null,
+          all_day: 1,
+          start_at,
+          end_at,
+          title: title || "วันหยุด",
+          note: null,
+          reminders: []
+        };
+      }
+
+      // POST
+      const res = await fetch(submitUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Accept": "application/json" },
+        body: JSON.stringify(payload)
+      });
+
+      const text = await res.text();
+      let json = null;
+      try { json = text ? JSON.parse(text) : null; } catch {}
+
+      if (!res.ok) {
+        const errMsg = json?.message || json?.error || text || `HTTP ${res.status}`;
+        throw new Error(errMsg);
+      }
+
+      showMsg("บันทึกสำเร็จ ✅", "success");
+
+      // ปิดหน้าหลังสำเร็จ (ให้เห็นข้อความแป๊บหนึ่ง)
+      setTimeout(() => {
+        try { onDone?.(); } catch {}
+      }, 500);
+
     } catch (e) {
-      setMsg(msgEl, "err", String(e?.message || e));
+      showMsg(`บันทึกไม่สำเร็จ: ${String(e.message || e)}`, "error");
+    } finally {
+      state.submitting = false;
+      setSubmitting(false);
       validate();
     }
   });
 
-  loadSubjectsAndRender();
+  // init load (โหลดวิชาสำหรับ cancel)
+  loadSubjects();
+  validate();
 }
