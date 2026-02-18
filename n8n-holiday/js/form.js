@@ -39,7 +39,7 @@ function setModeUI(mode) {
 }
 
 function normalizeDayOrder(day) {
-  const order = ["จันทร์","อังคาร","พุธ","พฤหัสบดี","ศุกร์","เสาร์","อาทิตย์"];
+  const order = ["จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์", "อาทิตย์"];
   const idx = order.indexOf(day);
   return idx === -1 ? 999 : idx;
 }
@@ -301,18 +301,23 @@ export function initHolidayForm({ userId, displayName, subjectsUrl, submitUrl, o
 
       const text = await res.text();
       let json = null;
-      try { json = text ? JSON.parse(text) : null; } catch {}
+      try { json = text ? JSON.parse(text) : null; } catch { }
 
       if (!res.ok) {
         const errMsg = json?.message || json?.error || text || `HTTP ${res.status}`;
         throw new Error(errMsg);
       }
 
-      showMsg("บันทึกสำเร็จ ✅", "success");
+      document.getElementById("successOverlay").classList.remove("hidden");
+
+      setTimeout(() => {
+        try { liff.closeWindow(); } catch { }
+      }, 1200);
+
 
       // ปิดหน้าหลังสำเร็จ (ให้เห็นข้อความแป๊บหนึ่ง)
       setTimeout(() => {
-        try { onDone?.(); } catch {}
+        try { onDone?.(); } catch { }
       }, 500);
 
     } catch (e) {

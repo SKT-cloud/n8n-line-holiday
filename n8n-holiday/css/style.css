@@ -264,3 +264,49 @@ input, select{
   user-select: none;
 }
 
+.successOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  z-index:9999;
+}
+
+.successOverlay.hidden {
+  display:none;
+}
+
+.successBox {
+  background:white;
+  padding:30px;
+  border-radius:20px;
+  text-align:center;
+  animation: popIn .3s ease;
+}
+
+.checkmark {
+  font-size:60px;
+  color:#00c851;
+  animation: bounce 0.6s ease;
+}
+
+.successText {
+  margin-top:10px;
+  font-weight:600;
+  font-size:18px;
+}
+
+@keyframes popIn {
+  from { transform: scale(.8); opacity:0; }
+  to { transform: scale(1); opacity:1; }
+}
+
+@keyframes bounce {
+  0% { transform: scale(0); }
+  60% { transform: scale(1.2); }
+  100% { transform: scale(1); }
+}
+
+
