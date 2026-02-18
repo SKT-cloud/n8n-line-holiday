@@ -98,7 +98,7 @@
 
   <script type="module" src="./js/main.js"></script>
 
-  <!-- ✅ ของเดิมคุณมีอยู่แล้ว -->
+  <!-- ✅ Success overlay (ของเดิมคุณมีอยู่แล้ว) -->
   <div id="successOverlay" class="successOverlay hidden">
     <div class="successBox">
       <div class="checkmark">✓</div>
@@ -106,7 +106,7 @@
     </div>
   </div>
 
-  <!-- ✅ NEW: ถามว่าจะตั้งแจ้งเตือนไหม -->
+  <!-- ✅ ถามว่าจะตั้งแจ้งเตือนไหม -->
   <div id="reminderAskOverlay" class="modalOverlay hidden" role="dialog" aria-modal="true">
     <div class="modalBox">
       <div class="modalTitle">ตั้งแจ้งเตือนมั้ย? 🔔</div>
@@ -119,31 +119,38 @@
     </div>
   </div>
 
-  <!-- ✅ NEW: เลือก preset (เก็บไว้ก่อน ยังไม่ยิง backend) -->
+  <!-- ✅ เลือก reminder แบบ Google Calendar -->
   <div id="reminderPickOverlay" class="modalOverlay hidden" role="dialog" aria-modal="true">
     <div class="modalBox">
-      <div class="modalTitle">เลือกเวลาที่อยากให้แจ้งเตือน</div>
-      <div class="modalSub">ตอนนี้จะ “บันทึกการตั้งค่าไว้ในเครื่อง” ก่อนนะ (Phase ต่อไปค่อยส่งจริง) 💾</div>
+      <div class="modalTitle">เลือกแจ้งเตือน 🔔</div>
+      <div class="modalSub">ติ๊กได้หลายอัน • ถ้าเลือก “กำหนดเอง” จะมีช่องวัน+เวลาเพิ่มให้</div>
 
-      <div class="radioList">
-        <label class="radioItem">
-          <input type="radio" name="remPreset" value="1d" checked />
-          <span>ก่อน 1 วัน</span>
-        </label>
-        <label class="radioItem">
-          <input type="radio" name="remPreset" value="3h" />
-          <span>ก่อน 3 ชั่วโมง</span>
-        </label>
-        <label class="radioItem">
-          <input type="radio" name="remPreset" value="1h" />
-          <span>ก่อน 1 ชั่วโมง</span>
-        </label>
+      <div id="reminderOptions" class="remList"></div>
+
+      <div id="reminderCustomBox" class="customBox hidden">
+        <div class="row row--custom">
+          <div class="date-col">
+            <label class="miniLabel">วันที่</label>
+            <input id="reminderCustomDate" type="text" readonly placeholder="เลือกวันที่" />
+            <small id="reminderCustomDatePretty" class="hint"></small>
+          </div>
+
+          <div class="date-sep">เวลา</div>
+
+          <div class="date-col">
+            <label class="miniLabel">เวลา</label>
+            <select id="reminderCustomTime"></select>
+          </div>
+        </div>
+        <small class="hint">เลือกย้อนหลังไม่ได้ และระบบจะกันให้ด้วย ✅</small>
       </div>
 
       <div class="modalActions">
         <button id="reminderPickBackBtn" class="btn btn--ghost btn--half" type="button">ย้อนกลับ</button>
-        <button id="reminderPickSaveBtn" class="btn btn--half" type="button">บันทึกการตั้งค่า</button>
+        <button id="reminderPickSaveBtn" class="btn btn--half" type="button">บันทึกแจ้งเตือน</button>
       </div>
+
+      <div id="reminderPickMsg" class="msg" style="margin-top:10px;"></div>
     </div>
   </div>
 

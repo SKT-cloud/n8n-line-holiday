@@ -1,4 +1,4 @@
-import { fetchSubjectGroups, submitHoliday } from "./api.js";
+import { fetchSubjectGroups, submitHoliday, submitReminders } from "./api.js";
 
 function qs(id) {
   const el = document.getElementById(id);
@@ -44,7 +44,8 @@ function normalizeDayOrder(day) {
 }
 
 function normalizeOption(raw, fallbackDay) {
-  if (raw && (raw.id || raw.subject_id) && (raw.code || raw.meta || raw.label)) {
+  // รองรับ option แบบ {subject_id,label,meta} ที่ n8n ส่งมา
+  if (raw && (raw.id || raw.subject_id)) {
     const meta = raw.meta || {};
     const id = raw.id || raw.subject_id;
 
@@ -70,6 +71,7 @@ function normalizeOption(raw, fallbackDay) {
     };
   }
 
+  // fallback กันพัง
   return {
     id: raw?.id || raw?.subject_id || crypto.randomUUID(),
     day: fallbackDay || "",
@@ -155,12 +157,13 @@ function setSelectedSubjectUI(subject) {
   `;
 }
 
-// ===== NEW: Post-save reminder flow =====
+/* overlays */
 function openOverlay(id) { document.getElementById(id)?.classList.remove("hidden"); }
 function closeOverlay(id) { document.getElementById(id)?.classList.add("hidden"); }
 
+/* ===== reminder UI helpers ===== */
+
 function buildSummaryText(payload, selectedSubject) {
-  // สรุปสั้น ๆ ไปแสดงใน modal
   const start = String(payload.start_at || "").slice(0, 10);
   const end = String(payload.end_at || "").slice(0, 10);
   const dateText = start === end ? start : `${start} – ${end}`;
@@ -174,22 +177,42 @@ function buildSummaryText(payload, selectedSubject) {
   return `วันหยุด\nวันที่: ${dateText}`;
 }
 
-function saveReminderDraft({ userId, payload, preset }) {
-  const draft = {
-    user_id: userId,
-    created_at: new Date().toISOString(),
-    preset,
-    // เก็บ key สำคัญเพื่อไปผูกกับ holiday ที่เพิ่งสร้าง (Phase ต่อไป)
-    type: payload.type,
-    subject_id: payload.subject_id ?? null,
-    start_at: payload.start_at,
-    end_at: payload.end_at,
-    title: payload.title ?? null
-  };
-  localStorage.setItem("holiday_reminder_draft", JSON.stringify(draft));
+// ✅ FIX: รองรับ response แบบ Object หรือ Array (ของคุณเป็น Array)
+function extractHolidayId(result) {
+  const r = Array.isArray(result) ? result[0] : result;
+  return r?.id ?? r?.holiday_id ?? r?.data?.id ?? null;
 }
 
-export function initHolidayForm({ userId, displayName, subjectsUrl, submitUrl, onDone }) {
+function buildTimeOptions30Min(selectEl) {
+  const times = [];
+  for (let h = 6; h <= 22; h++) {
+    for (let m = 0; m < 60; m += 30) {
+      if (h === 22 && m > 0) continue;
+      const hh = String(h).padStart(2, "0");
+      const mm = String(m).padStart(2, "0");
+      times.push(`${hh}:${mm}`);
+    }
+  }
+  selectEl.innerHTML = times.map(t => `<option value="${t}">${t}</option>`).join("");
+  selectEl.value = "09:00";
+}
+
+function nowBangkokYMD() {
+  const d = new Date(Date.now() + 7 * 60 * 60 * 1000);
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(d.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function prettyDMY(ymd) {
+  if (!ymd) return "";
+  const [y, m, d] = String(ymd).split("-");
+  if (!y || !m || !d) return "";
+  return `${d}/${m}/${y}`;
+}
+
+export function initHolidayForm({ userId, displayName, subjectsUrl, submitUrl, remindersUrl, onDone }) {
   qs("who").textContent = displayName ? `คุณ ${displayName}` : "ผู้ใช้ LINE";
 
   const modeEl = qs("mode");
@@ -201,11 +224,32 @@ export function initHolidayForm({ userId, displayName, subjectsUrl, submitUrl, o
   const cancelDateEl = qs("cancelDate");
   const cancelDateBox = qs("cancelDateBox");
 
+  // reminder overlays
+  const askCloseBtn = document.getElementById("reminderCloseBtn");
+  const askSetBtn = document.getElementById("reminderSetBtn");
+  const pickBackBtn = document.getElementById("reminderPickBackBtn");
+  const pickSaveBtn = document.getElementById("reminderPickSaveBtn");
+  const askSummaryEl = document.getElementById("reminderAskSummary");
+
+  const remOptEl = document.getElementById("reminderOptions");
+  const remCustomBox = document.getElementById("reminderCustomBox");
+  const remCustomDate = document.getElementById("reminderCustomDate");
+  const remCustomDatePretty = document.getElementById("reminderCustomDatePretty");
+  const remCustomTime = document.getElementById("reminderCustomTime");
+  const remPickMsg = document.getElementById("reminderPickMsg");
+
   const state = {
     groups: [],
     selectedSubject: null,
-    submitting: false
+    submitting: false,
+    lastSaved: null // { holidayId, payload }
   };
+
+  function setRemMsg(text, type = "") {
+    if (!remPickMsg) return;
+    remPickMsg.className = "msg" + (type ? ` msg--${type}` : "");
+    remPickMsg.textContent = text || "";
+  }
 
   function validate() {
     const btn = qs("submitBtn");
@@ -262,18 +306,120 @@ export function initHolidayForm({ userId, displayName, subjectsUrl, submitUrl, o
   cancelDateEl.addEventListener("change", validate);
   titleEl.addEventListener("input", validate);
 
-  // ===== bind reminder modal buttons once =====
-  const askCloseBtn = document.getElementById("reminderCloseBtn");
-  const askSetBtn = document.getElementById("reminderSetBtn");
-  const pickBackBtn = document.getElementById("reminderPickBackBtn");
-  const pickSaveBtn = document.getElementById("reminderPickSaveBtn");
-  const askSummaryEl = document.getElementById("reminderAskSummary");
+  /* ===== reminder presets (Google Calendar style) ===== */
+  const PRESETS = [
+    { key: "d0_0900", label: "วันเริ่ม 09:00", hint: "วันเดียวกับกำหนดการ", days_before: 0, time: "09:00" },
+    { key: "d1_0900", label: "1 วันก่อน 09:00", hint: "แนะนำสำหรับส่วนใหญ่", days_before: 1, time: "09:00", default: true },
+    { key: "d1_1700", label: "1 วันก่อน 17:00", hint: "เตือนช่วงเย็น", days_before: 1, time: "17:00" },
+    { key: "d2_0900", label: "2 วันก่อน 09:00", hint: "เผื่อวางแผนล่วงหน้า", days_before: 2, time: "09:00" },
+    { key: "custom", label: "กำหนดเอง", hint: "เลือกวัน + เวลา เอง" }
+  ];
 
-  function getSelectedPreset() {
-    const el = document.querySelector('input[name="remPreset"]:checked');
-    return el?.value || "1d";
+  function renderReminderOptions() {
+    if (!remOptEl) return;
+
+    remOptEl.innerHTML = PRESETS.map(p => {
+      const checked = p.default ? "checked" : "";
+      return `
+        <div class="remItem">
+          <div class="remLeft">
+            <input type="checkbox" class="remCk" data-key="${p.key}" ${checked} />
+            <div class="remText">
+              <div class="remLabel">${p.label}</div>
+              <div class="remHint">${p.hint}</div>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join("");
+
+    const onChange = () => {
+      const customChecked = !!remOptEl.querySelector('.remCk[data-key="custom"]')?.checked;
+      remCustomBox?.classList.toggle("hidden", !customChecked);
+
+      // ถ้าเลือก custom ต้องมีวัน+เวลา
+      if (pickSaveBtn) {
+        if (!customChecked) pickSaveBtn.disabled = false;
+        else pickSaveBtn.disabled = !(remCustomDate?.value && remCustomTime?.value);
+      }
+    };
+
+    remOptEl.querySelectorAll(".remCk").forEach(ck => ck.addEventListener("change", onChange));
+    onChange();
   }
 
+  function initCustomReminderInputs() {
+    if (!remCustomTime || !remCustomDate) return;
+
+    buildTimeOptions30Min(remCustomTime);
+
+    // init flatpickr สำหรับ custom date (readonly)
+    if (window.flatpickr) {
+      flatpickr(remCustomDate, {
+        dateFormat: "Y-m-d",
+        altInput: true,
+        altFormat: "d/m/Y",
+        allowInput: false,
+        disableMobile: true,
+        minDate: "today",
+        onReady: (_, __, instance) => {
+          const lock = (el) => {
+            if (!el) return;
+            el.readOnly = true;
+            el.setAttribute("inputmode", "none");
+            el.setAttribute("autocomplete", "off");
+            el.addEventListener("keydown", (e) => e.preventDefault());
+            el.addEventListener("paste", (e) => e.preventDefault());
+          };
+          lock(instance.input);
+          lock(instance.altInput);
+        },
+        onChange: (_, dateStr) => {
+          if (remCustomDatePretty) {
+            remCustomDatePretty.textContent = dateStr ? `เลือก: ${prettyDMY(dateStr)}` : "";
+          }
+          const customChecked = !!remOptEl?.querySelector('.remCk[data-key="custom"]')?.checked;
+          if (pickSaveBtn) pickSaveBtn.disabled = customChecked ? !(remCustomDate.value && remCustomTime.value) : false;
+        }
+      });
+    }
+
+    // default date = วันนี้
+    if (!remCustomDate.value) {
+      remCustomDate.value = nowBangkokYMD();
+      if (remCustomDatePretty) remCustomDatePretty.textContent = `เลือก: ${prettyDMY(remCustomDate.value)}`;
+    }
+
+    remCustomTime.addEventListener("change", () => {
+      const customChecked = !!remOptEl?.querySelector('.remCk[data-key="custom"]')?.checked;
+      if (pickSaveBtn) pickSaveBtn.disabled = customChecked ? !(remCustomDate.value && remCustomTime.value) : false;
+    });
+  }
+
+  function collectReminders() {
+    const keys = Array.from(remOptEl?.querySelectorAll(".remCk") || [])
+      .filter(el => el.checked)
+      .map(el => el.getAttribute("data-key"));
+
+    const reminders = [];
+
+    for (const key of keys) {
+      if (key === "custom") continue;
+      const p = PRESETS.find(x => x.key === key);
+      if (!p) continue;
+      reminders.push({ days_before: p.days_before, time: p.time });
+    }
+
+    if (keys.includes("custom")) {
+      const d = remCustomDate?.value;
+      const t = remCustomTime?.value;
+      if (d && t) reminders.push({ remind_at: `${d}T${t}:00+07:00` });
+    }
+
+    return reminders;
+  }
+
+  /* ===== submit holiday ===== */
   qs("submitBtn").addEventListener("click", async () => {
     if (state.submitting) return;
 
@@ -326,23 +472,21 @@ export function initHolidayForm({ userId, displayName, subjectsUrl, submitUrl, o
         };
       }
 
-      await submitHoliday({ submitUrl, payload }); // api.js ของคุณ :contentReference[oaicite:4]{index=4}
+      const res = await submitHoliday({ submitUrl, payload });
 
-      // 1) show check animation
+      const holidayId = extractHolidayId(res); // ✅ FIXED
+      state.lastSaved = { holidayId, payload };
+
+      // show check animation
       openOverlay("successOverlay");
 
-      // 2) after a short beat -> ask reminders
+      // ask reminders after animation
       setTimeout(() => {
         closeOverlay("successOverlay");
 
-        // แสดงสรุปใน dialog
-        if (askSummaryEl) {
-          askSummaryEl.textContent = buildSummaryText(payload, state.selectedSubject);
-        }
-
+        if (askSummaryEl) askSummaryEl.textContent = buildSummaryText(payload, state.selectedSubject);
         openOverlay("reminderAskOverlay");
 
-        // bind actions (reset handlers)
         if (askCloseBtn) {
           askCloseBtn.onclick = () => {
             closeOverlay("reminderAskOverlay");
@@ -353,33 +497,15 @@ export function initHolidayForm({ userId, displayName, subjectsUrl, submitUrl, o
         if (askSetBtn) {
           askSetBtn.onclick = () => {
             closeOverlay("reminderAskOverlay");
+            setRemMsg("");
+            renderReminderOptions();
+            initCustomReminderInputs();
             openOverlay("reminderPickOverlay");
           };
         }
-
-        if (pickBackBtn) {
-          pickBackBtn.onclick = () => {
-            closeOverlay("reminderPickOverlay");
-            openOverlay("reminderAskOverlay");
-          };
-        }
-
-        if (pickSaveBtn) {
-          pickSaveBtn.onclick = () => {
-            const preset = getSelectedPreset();
-            saveReminderDraft({ userId, payload, preset });
-
-            // ปิด modal แล้วปิด LIFF
-            closeOverlay("reminderPickOverlay");
-            showMsg("บันทึกการตั้งค่าแจ้งเตือนไว้แล้ว 🔔", "ok");
-            setTimeout(() => {
-              try { onDone?.(); } catch {}
-            }, 600);
-          };
-        }
-
       }, 900);
 
+      showMsg("บันทึกสำเร็จ ✅", "ok");
     } catch (e) {
       showMsg(`บันทึกไม่สำเร็จ: ${String(e?.message || e)}`, "err");
     } finally {
@@ -389,10 +515,57 @@ export function initHolidayForm({ userId, displayName, subjectsUrl, submitUrl, o
     }
   });
 
+  // reminder pick actions
+  if (pickBackBtn) {
+    pickBackBtn.onclick = () => {
+      closeOverlay("reminderPickOverlay");
+      openOverlay("reminderAskOverlay");
+    };
+  }
+
+  if (pickSaveBtn) {
+    pickSaveBtn.onclick = async () => {
+      try {
+        setRemMsg("กำลังบันทึกแจ้งเตือน…");
+        pickSaveBtn.disabled = true;
+
+        const holidayId = state.lastSaved?.holidayId;
+        if (!holidayId) {
+          throw new Error("ไม่มี holiday id จาก webhook submit (ตอนนี้คุณตอบกลับมาเป็น array แล้วแก้แล้ว แต่ยังไม่เจอ id)");
+        }
+
+        const reminders = collectReminders();
+        if (!reminders.length) {
+          setRemMsg("ไม่ได้เลือกแจ้งเตือน ✅", "ok");
+          setTimeout(() => {
+            closeOverlay("reminderPickOverlay");
+            try { onDone?.(); } catch {}
+          }, 600);
+          return;
+        }
+
+        await submitReminders({
+          remindersUrl,
+          payload: { user_id: userId, holiday_id: holidayId, reminders }
+        });
+
+        setRemMsg("บันทึกแจ้งเตือนสำเร็จ ✅", "ok");
+        setTimeout(() => {
+          closeOverlay("reminderPickOverlay");
+          try { onDone?.(); } catch {}
+        }, 700);
+      } catch (e) {
+        setRemMsg(`ตั้งแจ้งเตือนไม่สำเร็จ: ${String(e?.message || e)}`, "err");
+        pickSaveBtn.disabled = false;
+      }
+    };
+  }
+
+  /* ===== load subjects ===== */
   async function loadSubjects() {
     try {
       showMsg("กำลังโหลดรายชื่อวิชา…");
-      const groups = await fetchSubjectGroups({ subjectsUrl, userId }); // api.js :contentReference[oaicite:5]{index=5}
+      const groups = await fetchSubjectGroups({ subjectsUrl, userId });
       state.groups = Array.isArray(groups) ? groups : [];
 
       renderSubjects(state.groups, state, pickSubject);

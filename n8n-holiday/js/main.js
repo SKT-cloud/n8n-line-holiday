@@ -103,6 +103,7 @@ function initDatePickers() {
       displayName: profile.displayName,
       subjectsUrl: CONFIG.N8N_SUBJECTS_URL, // ✅ webhook-test ยังเหมือนเดิม
       submitUrl: CONFIG.N8N_SUBMIT_URL,     // ✅ webhook-test ยังเหมือนเดิม
+      remindersUrl: CONFIG.N8N_REMINDERS_URL, // ✅ NEW: เรียกตอนกด "บันทึกแจ้งเตือน"
       onDone: () => {
         try { liff.closeWindow(); } catch {}
       }

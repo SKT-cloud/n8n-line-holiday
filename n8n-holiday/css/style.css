@@ -281,8 +281,7 @@ input, select{
 @keyframes popIn { from { transform: scale(.8); opacity:0; } to { transform: scale(1); opacity:1; } }
 @keyframes bounce { 0% { transform: scale(0); } 60% { transform: scale(1.2); } 100% { transform: scale(1); } }
 
-/* ===== NEW: Reminder modal overlays ===== */
-
+/* ===== Reminder modal overlays ===== */
 .modalOverlay{
   position: fixed;
   inset: 0;
@@ -327,22 +326,74 @@ input, select{
   margin-top: 0;
 }
 
-.radioList{
+/* ===== NEW: Google Calendar-like reminder list ===== */
+
+.remList{
   margin-top:12px;
-  border:1px solid var(--border);
-  border-radius:14px;
-  overflow:hidden;
+  display:grid;
+  gap:10px;
 }
 
-.radioItem{
-  display:flex;
-  align-items:center;
-  gap:10px;
+.remItem{
+  border:1px solid var(--border);
+  border-radius:14px;
   padding:12px;
-  border-top:1px solid var(--border);
-  cursor:pointer;
-  user-select:none;
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:12px;
+  background:#fff;
 }
-.radioItem:first-child{ border-top:0; }
-.radioItem:hover{ background:#fafafa; }
-.radioItem input{ width:auto; margin:0; }
+
+.remLeft{
+  display:flex;
+  align-items:flex-start;
+  gap:10px;
+  min-width:0;
+}
+
+.remItem input[type="checkbox"]{
+  width:auto;
+  margin:0;
+  transform: scale(1.15);
+}
+
+.remText{
+  min-width:0;
+}
+
+.remLabel{
+  font-weight:900;
+  font-size:14px;
+  line-height:1.25;
+}
+
+.remHint{
+  margin-top:3px;
+  font-size:12px;
+  color:var(--muted);
+  line-height:1.35;
+}
+
+.customBox{
+  margin-top:12px;
+  padding:12px;
+  border:1px dashed var(--border);
+  border-radius:14px;
+  background:#fbfbfb;
+}
+
+.row--custom{
+  display:flex;
+  align-items:flex-end;
+  gap:12px;
+}
+
+.miniLabel{
+  display:block;
+  font-size:12px;
+  font-weight:900;
+  margin-bottom:4px;
+  color:#333;
+  opacity:.9;
+}
