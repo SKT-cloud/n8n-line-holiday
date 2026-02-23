@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>แก้ไข / ลบวันหยุด</title>
+
+  <!-- LIFF SDK -->
+  <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+
+  <link rel="stylesheet" href="./edit.css" />
+</head>
+
+<body>
+  <header class="topbar">
+    <div class="container topbar__inner">
+      <div class="topbar__left">
+        <h1 class="h1">แก้ไข / ลบวันหยุด</h1>
+        <p class="sub" id="subtitle">กำลังเริ่มต้น…</p>
+      </div>
+
+      <div class="topbar__right">
+        <button class="btn btn--ghost" id="btnReload" type="button">โหลดใหม่</button>
+        <button class="btn btn--ghost" id="btnSettings" type="button">ตั้งค่า</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <!-- Settings -->
+    <section class="panel" id="settingsPanel" hidden>
+      <div class="panel__head">
+        <h2 class="h2">ตั้งค่าการเชื่อมต่อ</h2>
+        <p class="help">ใส่ API Base ของ Worker (และ API Key ถ้ามี Bearer)</p>
+      </div>
+
+      <div class="grid2">
+        <div>
+          <label class="label">API Base</label>
+          <input class="input" id="apiBase" type="text" placeholder="https://<your-worker-domain>" />
+          <div class="hint">ตัวอย่าง: https://xxx.workers.dev</div>
+        </div>
+
+        <div>
+          <label class="label">API Key (ถ้า Worker ใช้ Bearer)</label>
+          <input class="input" id="apiKey" type="text" placeholder="กรอกครั้งเดียว (เก็บในเครื่อง)" />
+          <div class="hint">ถ้ายังไม่อยากใช้ ปล่อยว่างได้</div>
+        </div>
+      </div>
+
+      <div class="panel__actions">
+        <button class="btn btn--ghost" id="btnClearSettings" type="button">ล้าง</button>
+        <button class="btn btn--primary" id="btnSaveSettings" type="button">บันทึกตั้งค่า</button>
+      </div>
+
+      <hr class="hr" />
+
+      <div class="metaRow">
+        <div class="pill">ช่วงข้อมูล: <span id="rangeLabel">—</span></div>
+        <div class="pill">userId: <span id="userLabel">—</span></div>
+      </div>
+    </section>
+
+    <!-- List -->
+    <section class="list" id="list"></section>
+
+    <!-- Empty -->
+    <section class="empty" id="empty" hidden>
+      <h2 class="h2">ยังไม่มีรายการในช่วงนี้</h2>
+      <p class="help">ลองกด “โหลดใหม่” หรือค่อยปรับช่วงเวลาในขั้นต่อไปได้ ✨</p>
+    </section>
+  </main>
+
+  <!-- Footer actions -->
+  <footer class="footerBar">
+    <div class="container footerBar__inner">
+      <div class="muted" id="countLabel">—</div>
+      <div class="footerBar__actions">
+        <button class="btn btn--ghost" id="btnDiscard" type="button">ทิ้งการแก้ไข</button>
+        <button class="btn btn--primary" id="btnSave" type="button" disabled>บันทึกทั้งหมด</button>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Toast -->
+  <div class="toast" id="toast" aria-live="polite"></div>
+
+  <!-- Modal -->
+  <div class="overlay" id="overlay" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-label="แก้ไขรายการ">
+      <div class="modal__head">
+        <div>
+          <h3 class="h3" id="modalTitle">แก้ไขรายการ</h3>
+          <p class="help" id="modalMeta">—</p>
+        </div>
+        <button class="btn btn--ghost" id="btnCloseModal" type="button">ปิด</button>
+      </div>
+
+      <div class="grid2 mt12">
+        <div>
+          <label class="label">วันที่เริ่ม</label>
+          <input class="input" type="date" id="mStart" />
+        </div>
+        <div>
+          <label class="label">วันที่สิ้นสุด (ไม่ใส่ = วันเดียว)</label>
+          <input class="input" type="date" id="mEnd" />
+        </div>
+      </div>
+
+      <div class="mt12">
+        <label class="label">Title (ปล่อยว่างได้)</label>
+        <input class="input" type="text" id="mTitle" placeholder="เช่น สอบ / งานพิเศษ / ไปต่างจังหวัด" />
+        <div class="hint">holiday: ว่าง = ส่ง null • cancel: ว่าง = ปล่อยให้ Worker fallback</div>
+      </div>
+
+      <div class="mt12">
+        <label class="label">Note (optional)</label>
+        <textarea class="textarea" id="mNote" placeholder="รายละเอียดเพิ่มเติม…"></textarea>
+      </div>
+
+      <div class="modal__actions mt12">
+        <button class="btn btn--danger" id="btnDeleteOne" type="button">ลบรายการนี้</button>
+        <button class="btn btn--ghost" id="btnUndoDelete" type="button" hidden>Undo ลบ</button>
+        <button class="btn btn--primary" id="btnApply" type="button">บันทึกการแก้ไขรายการนี้</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="./edit.js"></script>
+</body>
+</html>
