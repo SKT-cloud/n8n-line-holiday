@@ -1,6 +1,6 @@
 import { CONFIG } from "./config.js";
 import { initLiff } from "./auth.js";
-import { fetchSubjects, createHoliday, pushSaved } from "./api.js";
+import { fetchSubjects, createHoliday } from "./api.js";
 import { bindForm } from "./form.js";
 
 const $ = (s) => document.querySelector(s);
@@ -94,12 +94,6 @@ async function run() {
       onSubmit: async (payload) => {
         setStatus("กำลังบันทึก...");
         const res = await createHoliday({ idToken, payload });
-
-        // optional push on save
-        if (CONFIG.PUSH_ON_SAVE) {
-          try { await pushSaved({ idToken, holidayId: res?.id }); } catch(_) {}
-        }
-
         toast("บันทึกสำเร็จ ✅", "ok");
         setStatus("");
 

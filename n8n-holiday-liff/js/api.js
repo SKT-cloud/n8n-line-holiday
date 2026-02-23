@@ -1,7 +1,8 @@
-import { CONFIG } from "./config.js";
+import { CONFIG, joinUrl } from "./config.js";
 
-async function requestJson(path, { method="GET", idToken, body } = {}) {
-  const url = CONFIG.joinUrl(CONFIG.WORKER_BASE, path);
+async function requestJson(path, { method = "GET", idToken, body } = {}) {
+  const url = joinUrl(CONFIG.WORKER_BASE, path);
+
   const headers = { "Content-Type": "application/json" };
   if (idToken) headers.Authorization = `Bearer ${idToken}`;
 
@@ -20,12 +21,28 @@ async function requestJson(path, { method="GET", idToken, body } = {}) {
 }
 
 export async function fetchSubjects({ idToken }) {
-  // ✅ Worker: GET /liff/subjects
   const data = await requestJson("/liff/subjects", { method: "GET", idToken });
   return data.items || [];
 }
 
 export async function createHoliday({ idToken, payload }) {
-  // ✅ Worker: POST /liff/holidays/create
   return requestJson("/liff/holidays/create", { method: "POST", idToken, body: payload });
+}
+
+export async function listHolidays({ idToken, from, to }) {
+  const qs = new URLSearchParams({ from, to }).toString();
+  const data = await requestJson(`/liff/holidays/list?${qs}`, { method: "GET", idToken });
+  return data.items || [];
+}
+
+export async function setReminders({ idToken, holiday_id, reminders }) {
+  return requestJson("/liff/holidays/reminders/set", {
+    method: "POST",
+    idToken,
+    body: { holiday_id, reminders },
+  });
+}
+
+export async function deleteHoliday({ idToken, id }) {
+  return requestJson("/liff/holidays/delete", { method: "POST", idToken, body: { id } });
 }
