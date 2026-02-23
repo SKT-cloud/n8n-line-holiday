@@ -197,6 +197,7 @@ export function initHolidayForm({ userId, displayName, subjectsUrl, submitUrl, o
   const modeEl = qs("mode");
   const resetBtn = qs("resetBtn");
   const titleEl = qs("title");
+  const noteEl = qs("note");
 
   const startDateEl = qs("startDate");
   const endDateEl = qs("endDate");
@@ -329,6 +330,7 @@ export function initHolidayForm({ userId, displayName, subjectsUrl, submitUrl, o
 
   resetBtn.addEventListener("click", () => {
     titleEl.value = "";
+    noteEl.value = "";
     startDateEl.value = "";
     endDateEl.value = "";
     cancelDateEl.value = "";
@@ -364,6 +366,7 @@ export function initHolidayForm({ userId, displayName, subjectsUrl, submitUrl, o
   endDateEl.addEventListener("change", validate);
   cancelDateEl.addEventListener("change", validate);
   titleEl.addEventListener("input", validate);
+  noteEl.addEventListener("input", validate);
 
   remNoneBtn.addEventListener("click", () => {
     setReminderUI(false);
@@ -501,6 +504,8 @@ export function initHolidayForm({ userId, displayName, subjectsUrl, submitUrl, o
 
       const mode = modeEl.value;
       const title = titleEl.value.trim();
+      const noteRaw = noteEl.value.trim();
+      const note = noteRaw ? noteRaw : null;
 
       const hhmm = state.reminderEnabled ? getReminderHHmm() : null;
       const reminders = state.reminderEnabled
@@ -522,7 +527,7 @@ export function initHolidayForm({ userId, displayName, subjectsUrl, submitUrl, o
           start_at,
           end_at,
           title: title || `${state.selectedSubject.code} ${state.selectedSubject.name}`,
-          note: null,
+          note,
           reminders
         };
       } else {
@@ -539,7 +544,7 @@ export function initHolidayForm({ userId, displayName, subjectsUrl, submitUrl, o
           start_at,
           end_at,
           title: title ? title : null,
-          note: null,
+          note,
           reminders
         };
       }
