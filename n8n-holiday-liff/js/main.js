@@ -1,7 +1,7 @@
 import { CONFIG } from "./config.js";
 import { initLiff } from "./auth.js";
 import { fetchSubjects, createHoliday } from "./api.js";
-import { bindForm } from "./form.js";
+import { initForm } from "./form.js";
 
 const $ = (s) => document.querySelector(s);
 
@@ -90,7 +90,7 @@ async function run() {
     setStatus("");
 
     // Bind form actions
-    bindForm({
+    initForm({
       onSubmit: async (payload) => {
         setStatus("กำลังบันทึก...");
         const res = await createHoliday({ idToken, payload });
