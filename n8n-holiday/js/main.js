@@ -18,18 +18,10 @@ function initDatePickers() {
     dateFormat: "Y-m-d",
     altInput: true,
     altFormat: "d/m/Y",
-
-    // ✅ กดเลือกอย่างเดียว ห้ามพิมพ์
     allowInput: false,
-
-    // ✅ บังคับใช้ flatpickr แม้บนมือถือ
     disableMobile: true,
-
-    // ✅ ห้ามเลือกย้อนหลัง
     minDate: "today",
-
     onReady: (_, __, instance) => {
-      // ล็อก input ทั้งตัวจริงและ altInput (ตัวที่ผู้ใช้เห็น)
       const lock = (el) => {
         if (!el) return;
         el.readOnly = true;
@@ -53,15 +45,11 @@ function initDatePickers() {
   const startPicker = startEl
     ? flatpickr(startEl, {
         ...common("กรุณาเลือกวันที่เริ่ม"),
-        onChange: (selectedDates, dateStr) => {
-          // เมื่อเลือกวันเริ่ม -> บังคับให้วันสิ้นสุดเลือกได้ไม่ก่อนวันเริ่ม
+        onChange: (_, dateStr) => {
           if (endPicker) {
             endPicker.set("minDate", dateStr || "today");
-
-            // ถ้า endDate มีค่าอยู่แล้วแต่ดันน้อยกว่า start -> เคลียร์ให้
             if (endPicker.input.value && endPicker.input.value < dateStr) {
               endPicker.clear();
-              // trigger change ให้ form.js refresh/validate
               endPicker.input.dispatchEvent(new Event("change", { bubbles: true }));
             }
           }
@@ -72,7 +60,6 @@ function initDatePickers() {
   if (endEl) {
     endPicker = flatpickr(endEl, {
       ...common("หากหยุดวันเดียว สามารถเว้นไว้ได้"),
-      // minDate ของ endDate ต้องตาม startDate ถ้ามี
       minDate: startPicker?.input?.value || "today"
     });
   }
@@ -101,9 +88,8 @@ function initDatePickers() {
     initHolidayForm({
       userId: profile.userId,
       displayName: profile.displayName,
-      subjectsUrl: CONFIG.N8N_SUBJECTS_URL, // ✅ webhook-test ยังเหมือนเดิม
-      submitUrl: CONFIG.N8N_SUBMIT_URL,     // ✅ webhook-test ยังเหมือนเดิม
-      remindersUrl: CONFIG.N8N_REMINDERS_URL, // ✅ NEW: เรียกตอนกด "บันทึกแจ้งเตือน"
+      subjectsUrl: CONFIG.N8N_SUBJECTS_URL,
+      submitUrl: CONFIG.N8N_SUBMIT_URL,
       onDone: () => {
         try { liff.closeWindow(); } catch {}
       }

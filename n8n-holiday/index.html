@@ -87,6 +87,39 @@
       </div>
     </section>
 
+    <!-- 🔔 ตั้งแจ้งเตือน (inline อยู่ล่างสุด) -->
+    <section id="reminderInline" class="section" style="margin-top:14px;">
+      <label>แจ้งเตือน</label>
+
+      <div class="segmented" role="tablist" aria-label="ตั้งแจ้งเตือน">
+        <button id="remNoneBtn" type="button" class="segBtn isActive" aria-selected="true">
+          ไม่ตั้งแจ้งเตือน
+        </button>
+        <button id="remSetBtn" type="button" class="segBtn" aria-selected="false">
+          ตั้งแจ้งเตือน ⏰
+        </button>
+      </div>
+
+      <div id="remPicker" class="remPicker hidden">
+        <div class="row row--custom">
+          <div class="date-col">
+            <label class="miniLabel">📅 วันที่</label>
+            <input id="remDate" type="text" readonly placeholder="เลือกวันที่แจ้งเตือน" />
+            <small id="remDatePretty" class="hint"></small>
+          </div>
+
+          <div class="date-sep">🕒</div>
+
+          <div class="date-col">
+            <label class="miniLabel">เวลา</label>
+            <select id="remTime"></select>
+          </div>
+        </div>
+
+        <small class="hint">ห้ามเลือกย้อนหลัง • เลือกวัน/เวลาที่อยากให้เตือน ✅</small>
+      </div>
+    </section>
+
     <button id="submitBtn" class="btn" disabled>บันทึก</button>
 
     <div id="msg" class="msg"></div>
@@ -98,61 +131,12 @@
 
   <script type="module" src="./js/main.js"></script>
 
-  <!-- ✅ Success overlay (ของเดิมคุณมีอยู่แล้ว) -->
+  <!-- ✅ Success overlay -->
   <div id="successOverlay" class="successOverlay hidden">
     <div class="successBox">
       <div class="checkmark">✓</div>
       <div class="successText">บันทึกสำเร็จ</div>
     </div>
   </div>
-
-  <!-- ✅ ถามว่าจะตั้งแจ้งเตือนไหม -->
-  <div id="reminderAskOverlay" class="modalOverlay hidden" role="dialog" aria-modal="true">
-    <div class="modalBox">
-      <div class="modalTitle">ตั้งแจ้งเตือนมั้ย? 🔔</div>
-      <div id="reminderAskSummary" class="modalSub"></div>
-
-      <div class="modalActions">
-        <button id="reminderCloseBtn" class="btn btn--ghost btn--half" type="button">ปิด</button>
-        <button id="reminderSetBtn" class="btn btn--half" type="button">ตั้ง</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- ✅ เลือก reminder แบบ Google Calendar -->
-  <div id="reminderPickOverlay" class="modalOverlay hidden" role="dialog" aria-modal="true">
-    <div class="modalBox">
-      <div class="modalTitle">เลือกแจ้งเตือน 🔔</div>
-      <div class="modalSub">ติ๊กได้หลายอัน • ถ้าเลือก “กำหนดเอง” จะมีช่องวัน+เวลาเพิ่มให้</div>
-
-      <div id="reminderOptions" class="remList"></div>
-
-      <div id="reminderCustomBox" class="customBox hidden">
-        <div class="row row--custom">
-          <div class="date-col">
-            <label class="miniLabel">วันที่</label>
-            <input id="reminderCustomDate" type="text" readonly placeholder="เลือกวันที่" />
-            <small id="reminderCustomDatePretty" class="hint"></small>
-          </div>
-
-          <div class="date-sep">เวลา</div>
-
-          <div class="date-col">
-            <label class="miniLabel">เวลา</label>
-            <select id="reminderCustomTime"></select>
-          </div>
-        </div>
-        <small class="hint">เลือกย้อนหลังไม่ได้ และระบบจะกันให้ด้วย ✅</small>
-      </div>
-
-      <div class="modalActions">
-        <button id="reminderPickBackBtn" class="btn btn--ghost btn--half" type="button">ย้อนกลับ</button>
-        <button id="reminderPickSaveBtn" class="btn btn--half" type="button">บันทึกแจ้งเตือน</button>
-      </div>
-
-      <div id="reminderPickMsg" class="msg" style="margin-top:10px;"></div>
-    </div>
-  </div>
-
 </body>
 </html>

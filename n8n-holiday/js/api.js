@@ -94,24 +94,3 @@ export async function submitHoliday({ submitUrl, payload }) {
 
   return data ?? { ok: true };
 }
-
-// ✅ NEW: submit reminders to webhook-test (n8n)
-export async function submitReminders({ remindersUrl, payload }) {
-  if (!remindersUrl) throw new Error("ยังไม่ได้ตั้งค่า remindersUrl");
-
-  const res = await fetch(remindersUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload)
-  });
-
-  let data = null;
-  try { data = await res.json(); } catch {}
-
-  if (!res.ok) {
-    const msg = data?.error || data?.message || "ตั้งแจ้งเตือนไม่สำเร็จ";
-    throw new Error(msg);
-  }
-
-  return data ?? { ok: true };
-}
