@@ -430,3 +430,24 @@ input, select{
   border-radius:14px;
   background:#fbfbfb;
 }
+
+/* =========================
+   🕒 Time Inputs (Hour/Minute)
+   ========================= */
+
+.timeRow{
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+
+.timeRow input{
+  width:78px;
+  text-align:center;
+  font-weight:900;
+}
+
+.timeSep{
+  font-weight:900;
+  opacity:.7;
+}

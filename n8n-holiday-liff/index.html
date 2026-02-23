@@ -110,9 +110,17 @@
 
           <div class="date-sep">🕒</div>
 
+          <!-- ✅ เปลี่ยนจาก select → input ชั่วโมง/นาที -->
           <div class="date-col">
             <label class="miniLabel">เวลา</label>
-            <select id="remTime"></select>
+
+            <div class="timeRow">
+              <input id="remHour" type="number" min="0" max="23" inputmode="numeric" placeholder="09" />
+              <span class="timeSep">:</span>
+              <input id="remMinute" type="number" min="0" max="59" inputmode="numeric" placeholder="00" />
+            </div>
+
+            <small class="hint">รูปแบบ 24 ชม. เช่น 9:00 → ใส่ 9 และ 0</small>
           </div>
         </div>
 

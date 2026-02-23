@@ -158,27 +158,21 @@ function setSelectedSubjectUI(subject) {
 function openOverlay(id) { document.getElementById(id)?.classList.remove("hidden"); }
 function closeOverlay(id) { document.getElementById(id)?.classList.add("hidden"); }
 
-/* ===== reminder inline helpers ===== */
-
-function buildTimeOptions30Min(selectEl) {
-  const times = [];
-  for (let h = 6; h <= 22; h++) {
-    for (let m = 0; m < 60; m += 30) {
-      if (h === 22 && m > 0) continue;
-      const hh = String(h).padStart(2, "0");
-      const mm = String(m).padStart(2, "0");
-      times.push(`${hh}:${mm}`);
-    }
-  }
-  selectEl.innerHTML = times.map(t => `<option value="${t}">${t}</option>`).join("");
-  selectEl.value = "09:00";
-}
-
 function prettyDMY(ymd) {
   if (!ymd) return "";
   const [y, m, d] = String(ymd).split("-");
   if (!y || !m || !d) return "";
   return `${d}/${m}/${y}`;
+}
+
+/* ===== time helpers ===== */
+function clampInt(val, min, max) {
+  const n = Number(val);
+  if (!Number.isFinite(n)) return null;
+  return Math.min(max, Math.max(min, n));
+}
+function pad2(n) {
+  return String(n).padStart(2, "0");
 }
 
 export function initHolidayForm({ userId, displayName, subjectsUrl, submitUrl, onDone }) {
@@ -199,7 +193,8 @@ export function initHolidayForm({ userId, displayName, subjectsUrl, submitUrl, o
   const remPicker = qs("remPicker");
   const remDate = qs("remDate");
   const remDatePretty = qs("remDatePretty");
-  const remTime = qs("remTime");
+  const remHour = qs("remHour");
+  const remMinute = qs("remMinute");
 
   const state = {
     groups: [],
@@ -218,6 +213,26 @@ export function initHolidayForm({ userId, displayName, subjectsUrl, submitUrl, o
     remSetBtn.setAttribute("aria-selected", String(state.reminderEnabled));
 
     remPicker.classList.toggle("hidden", !state.reminderEnabled);
+
+    // ✅ ถ้าเพิ่งเปิดตั้งแจ้งเตือน ให้โฟกัสช่องชั่วโมงทันที (พิมพ์ต่อได้เลย)
+    if (state.reminderEnabled) {
+      setTimeout(() => {
+        remHour.focus();
+        remHour.select();
+      }, 0);
+    }
+  }
+
+  function getReminderHHmm() {
+    const hRaw = String(remHour.value ?? "").trim();
+    const mRaw = String(remMinute.value ?? "").trim();
+    if (!hRaw || !mRaw) return null;
+
+    const h = clampInt(hRaw, 0, 23);
+    const m = clampInt(mRaw, 0, 59);
+    if (h === null || m === null) return null;
+
+    return `${pad2(h)}:${pad2(m)}`;
   }
 
   function validate() {
@@ -235,7 +250,7 @@ export function initHolidayForm({ userId, displayName, subjectsUrl, submitUrl, o
     const reminderOk =
       !state.reminderEnabled
         ? true
-        : !!(remDate.value && remTime.value);
+        : !!(remDate.value && getReminderHHmm());
 
     btn.disabled = !(modeOk && reminderOk);
   }
@@ -268,8 +283,10 @@ export function initHolidayForm({ userId, displayName, subjectsUrl, submitUrl, o
     setSelectedSubjectUI(null);
     cancelDateBox.classList.add("hidden");
 
+    // ✅ reset reminder: ไม่ใส่เวลาเริ่มต้น (ปล่อยว่าง)
     remDate.value = "";
-    remTime.value = "09:00";
+    remHour.value = "";
+    remMinute.value = "";
     if (remDatePretty) remDatePretty.textContent = "";
     setReminderUI(false);
 
@@ -297,9 +314,80 @@ export function initHolidayForm({ userId, displayName, subjectsUrl, submitUrl, o
     validate();
   });
 
-  buildTimeOptions30Min(remTime);
-  remTime.addEventListener("change", validate);
+  // ✅ UX: กดแล้วพิมพ์ง่าย + auto jump
+  function enhanceTimeInput(inputEl, { max, onFull }) {
+    // โฟกัสแล้ว select ทั้งหมด
+    inputEl.addEventListener("focus", () => {
+      setTimeout(() => inputEl.select(), 0);
+    });
 
+    // กดพิมพ์ตัวเลขแล้วแทนของเก่าทันที (ถ้าไม่ได้ select ทั้งหมด)
+    inputEl.addEventListener("keydown", (e) => {
+      const isDigit = e.key >= "0" && e.key <= "9";
+      if (!isDigit) return;
+
+      const fullSelected =
+        inputEl.selectionStart === 0 &&
+        inputEl.selectionEnd === inputEl.value.length;
+
+      if (!fullSelected && inputEl.value) {
+        inputEl.value = "";
+      }
+    });
+
+    // จำกัดให้เป็นตัวเลข 0-9 เท่านั้น + ไม่เกิน 2 ตัว + clamp ช่วง
+    inputEl.addEventListener("input", () => {
+      // เอาเฉพาะตัวเลข
+      inputEl.value = String(inputEl.value || "").replace(/[^\d]/g, "");
+
+      // ไม่เกิน 2 ตัว
+      if (inputEl.value.length > 2) inputEl.value = inputEl.value.slice(0, 2);
+
+      // ถ้ามีค่าแล้วลอง clamp
+      if (inputEl.value.length > 0) {
+        const n = clampInt(inputEl.value, 0, max);
+        if (n === null) {
+          inputEl.value = "";
+        } else if (String(n) !== inputEl.value && inputEl.value.length === 2) {
+          // ถ้าพิมพ์ 2 ตัวแล้วเกินช่วง เช่น 99 -> clamp ให้เลย
+          inputEl.value = String(n);
+        }
+      }
+
+      validate();
+
+      // ✅ พิมพ์ครบ 2 ตัวให้เด้งช่องถัดไป
+      if (inputEl.value.length === 2 && typeof onFull === "function") {
+        onFull();
+      }
+    });
+
+    // ถ้าออกจากช่องแล้ว clamp อีกทีแบบชัวร์ + เลข 1 ตัวคงไว้ได้
+    inputEl.addEventListener("blur", () => {
+      if (!inputEl.value) return;
+      const n = clampInt(inputEl.value, 0, max);
+      inputEl.value = n === null ? "" : String(n);
+      validate();
+    });
+  }
+
+  enhanceTimeInput(remHour, {
+    max: 23,
+    onFull: () => {
+      remMinute.focus();
+      remMinute.select();
+    }
+  });
+
+  enhanceTimeInput(remMinute, {
+    max: 59,
+    onFull: () => {
+      // พิมพ์ครบ 2 ตัวแล้ว “ไม่ต้องทำอะไร” หรือจะ blur ก็ได้
+      // remMinute.blur();
+    }
+  });
+
+  // date picker for reminder date
   if (window.flatpickr) {
     flatpickr(remDate, {
       dateFormat: "Y-m-d",
@@ -329,6 +417,7 @@ export function initHolidayForm({ userId, displayName, subjectsUrl, submitUrl, o
     });
   }
 
+  // submit
   qs("submitBtn").addEventListener("click", async () => {
     if (state.submitting) return;
 
@@ -346,8 +435,9 @@ export function initHolidayForm({ userId, displayName, subjectsUrl, submitUrl, o
       const mode = modeEl.value;
       const title = titleEl.value.trim();
 
+      const hhmm = state.reminderEnabled ? getReminderHHmm() : null;
       const reminders = state.reminderEnabled
-        ? [{ remind_at: `${remDate.value}T${remTime.value}:00+07:00` }]
+        ? [{ remind_at: `${remDate.value}T${hhmm}:00+07:00` }]
         : [];
 
       let payload;
@@ -403,6 +493,7 @@ export function initHolidayForm({ userId, displayName, subjectsUrl, submitUrl, o
     }
   });
 
+  // load subjects
   async function loadSubjects() {
     try {
       showMsg("กำลังโหลดรายชื่อวิชา…");
