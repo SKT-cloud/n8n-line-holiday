@@ -1,9 +1,14 @@
 export const CONFIG = {
-  LIFF_ID: "2009146879-xoNc2sVq",
+  // ✅ ใส่ LIFF ID ของคุณ
+  LIFF_ID: "YOUR_LIFF_ID",
 
-  // GET subjects: ?user_id=Uxxxx
-  N8N_SUBJECTS_URL: "https://spu-n8n.spu.ac.th/webhook-test/liff-subjects",
+  // ✅ Base URL ของ Cloudflare Worker (ที่มี /liff/subjects และ /liff/holidays/create)
+  WORKER_BASE: "https://YOUR-WORKER.your-domain.workers.dev",
 
-  // POST submit holiday/cancel
-  N8N_SUBMIT_URL: "https://spu-n8n.spu.ac.th/webhook-test/liff-holiday-submit"
+  // endpoints (ไม่ต้องแก้ถ้าใช้ตาม worker ด้านล่าง)
+  SUBJECTS_URL: "/liff/subjects",
+  CREATE_URL: "/liff/holidays/create",
+
+  // (optional) ถ้าต้องการให้บอทส่ง Flex ยืนยันผ่าน n8n ตอนบันทึกสำเร็จ (ไม่จำเป็น)
+  // N8N_CONFIRM_URL: "https://spu-n8n.spu.ac.th/webhook-test/liff-submit"
 };

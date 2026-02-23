@@ -5,8 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>เพิ่มวันหยุด</title>
 
-  <!-- Asset paths fixed: use absolute /css and /js -->
-
+  <!-- ✅ Paths: MUST match Pages folders -->
   <link rel="stylesheet" href="/css/style.css" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css" />
 
@@ -66,12 +65,10 @@
       <div class="field">
         <label>เลือกวิชาที่จะยกคลาส</label>
         <input id="subjectSearch" type="text" placeholder="ค้นหารหัส/ชื่อวิชา/ประเภท/วัน..." autocomplete="off" />
-
         <div class="subjects">
-          <div class="subjects__loading">กำลังโหลดรายชื่อวิชา…</div>
+          <div id="subjectsLoading" class="subjects__loading">กำลังโหลดรายชื่อวิชา…</div>
           <div id="subjectsList"></div>
         </div>
-
         <div id="subjectSelected" class="selected hidden"></div>
       </div>
 
@@ -104,7 +101,6 @@
       </div>
     </section>
 
-    <!-- Actions (not sticky) -->
     <div class="formActions">
       <button id="resetBtn" class="btn btn--ghost btn--sm" type="button">ล้างฟอร์ม</button>
       <button id="submitBtn" class="btn btn--primary btn--sm" disabled>บันทึก</button>

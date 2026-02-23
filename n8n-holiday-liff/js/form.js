@@ -1,592 +1,555 @@
-import { fetchSubjectGroups, submitHoliday } from "./api.js";
+import { fetchSubjects, createHoliday } from "./api.js";
 
-function qs(id) {
-  const el = document.getElementById(id);
-  if (!el) throw new Error(`Missing element #${id}`);
-  return el;
+const dayOrder = ["จันทร์","อังคาร","พุธ","พฤหัสบดี","พฤ","ศุกร์","เสาร์","อาทิตย์"];
+function dayIndexTH(d){
+  const i = dayOrder.indexOf(d);
+  if (i !== -1) return i;
+  // accept short form "พฤ"
+  if (d === "พฤ") return dayOrder.indexOf("พฤ");
+  return -1;
 }
 
-function showMsg(text, type = "") {
-  const msg = qs("msg");
-  msg.className = "msg" + (type ? ` msg--${type}` : "");
-  msg.textContent = text || "";
+function pad2(n){ return String(n).padStart(2,"0"); }
+
+function todayYMD(){
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = pad2(now.getMonth()+1);
+  const d = pad2(now.getDate());
+  return `${y}-${m}-${d}`;
 }
 
-function setSubmitting(isSubmitting) {
-  const btn = qs("submitBtn");
-  btn.disabled = isSubmitting;
-  btn.textContent = isSubmitting ? "กำลังบันทึก…" : "บันทึก";
-}
-
-function setModeUI(mode) {
-  const allDayBox = qs("allDayBox");
-  const cancelBox = qs("cancelBox");
-
-  if (mode === "cancel_subject") {
-    allDayBox.classList.add("hidden");
-    cancelBox.classList.remove("hidden");
-  } else {
-    cancelBox.classList.add("hidden");
-    allDayBox.classList.remove("hidden");
-  }
-}
-
-function toIsoBangkokStartEnd(startDateYYYYMMDD, endDateYYYYMMDD) {
-  const start = `${startDateYYYYMMDD}T00:00:00+07:00`;
-  const end = `${endDateYYYYMMDD}T23:59:59+07:00`;
-  return { start_at: start, end_at: end };
-}
-
-function normalizeDayOrder(day) {
-  const order = ["จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์", "อาทิตย์"];
-  const idx = order.indexOf(day);
-  return idx === -1 ? 999 : idx;
-}
-
-function normalizeOption(raw, fallbackDay) {
-  if (raw && (raw.id || raw.subject_id)) {
-    const meta = raw.meta || {};
-    const id = raw.id || raw.subject_id;
-
-    const day = raw.day || meta.day || fallbackDay || "";
-    const start = raw.start_time || meta.start_time || "";
-    const end = raw.end_time || meta.end_time || "";
-    const time = raw.time || (start && end ? `${start}-${end}` : "");
-
-    const code = raw.code || meta.subject_code || "";
-    const name = raw.name || meta.subject_name || "";
-    const section = raw.section || meta.section || "";
-    const type = raw.type || meta.type || "";
-
-    return {
-      id,
-      day,
-      time,
-      code,
-      name,
-      section,
-      type,
-      label: raw.label || `${time} | ${code} | ${name} | ${type}`
-    };
-  }
-
-  return {
-    id: raw?.id || raw?.subject_id || crypto.randomUUID(),
-    day: fallbackDay || "",
-    time: "",
-    code: "",
-    name: raw?.label || "",
-    section: "",
-    type: "",
-    label: raw?.label || ""
-  };
-}
-
-function renderSubjects(groups, state, onPick) {
-  const subjectsListEl = qs("subjectsList");
-  subjectsListEl.innerHTML = "";
-
-  const sortedGroups = (groups || [])
-    .slice()
-    .sort((a, b) => normalizeDayOrder(a.day) - normalizeDayOrder(b.day));
-
-  for (const g of sortedGroups) {
-    const dayWrap = document.createElement("div");
-    dayWrap.className = "dayGroup";
-
-    const header = document.createElement("div");
-    header.className = "dayHeader";
-    header.textContent = g.day || "ไม่ระบุวัน";
-    dayWrap.appendChild(header);
-
-    const options = (g.options || []).map((o) => normalizeOption(o, g.day));
-
-    for (const opt of options) {
-      const item = document.createElement("button");
-      item.type = "button";
-      item.className = "subjectItem";
-      if (state.selectedSubject?.id === opt.id) item.classList.add("isActive");
-
-      const searchable = [
-        opt.time, opt.code, opt.name, opt.type, opt.day, opt.section, opt.label
-      ].filter(Boolean).join(" ").toLowerCase();
-      item.dataset.search = searchable;
-
-      item.innerHTML = `
-        <div class="subjectTime">${opt.time || ""}</div>
-        <div class="subjectMain">
-          <div class="subjectLine1">
-            <span class="subjectCode">${opt.code || ""}</span>
-            <span class="subjectTypePill">${opt.type || ""}</span>
-          </div>
-          <div class="subjectName">${opt.name || opt.label || ""}</div>
-        </div>
-      `;
-
-      item.addEventListener("click", () => onPick(opt));
-      dayWrap.appendChild(item);
-    }
-
-    subjectsListEl.appendChild(dayWrap);
-  }
-}
-
-function applySubjectSearch() {
-  const q = qs("subjectSearch").value.trim().toLowerCase();
-  const items = qs("subjectsList").querySelectorAll(".subjectItem");
-  items.forEach((el) => {
-    const hit = !q || (el.dataset.search || "").includes(q);
-    el.style.display = hit ? "" : "none";
-  });
-}
-
-function setSelectedSubjectUI(subject) {
-  const box = qs("subjectSelected");
-  if (!subject) {
-    box.classList.add("hidden");
-    box.textContent = "";
-    return;
-  }
-  box.classList.remove("hidden");
-  box.innerHTML = `
-    <div><b>เลือกแล้ว ✅</b></div>
-    <div>${subject.day || ""} • ${subject.time || ""}</div>
-    <div><b>${subject.code || ""}</b> ${subject.name || ""} (${subject.type || ""})</div>
-  `;
-}
-
-function openOverlay(id) { document.getElementById(id)?.classList.remove("hidden"); }
-function closeOverlay(id) { document.getElementById(id)?.classList.add("hidden"); }
-
-function prettyDMY(ymd) {
-  if (!ymd) return "";
-  const [y, m, d] = String(ymd).split("-");
-  if (!y || !m || !d) return "";
+function ymdToThai(ymd){
+  if(!ymd) return "-";
+  const [y,m,d] = String(ymd).split("-");
+  if(!y||!m||!d) return "-";
   return `${d}/${m}/${y}`;
 }
 
-/* ===== time helpers ===== */
-function clampInt(val, min, max) {
-  const n = Number(val);
-  if (!Number.isFinite(n)) return null;
-  return Math.min(max, Math.max(min, n));
-}
-function pad2(n) {
-  return String(n).padStart(2, "0");
-}
-
-/* ===== cancel-date day filter helpers ===== */
-const TH_DAY_TO_JS = {
-  "อาทิตย์": 0,
-  "จันทร์": 1,
-  "อังคาร": 2,
-  "พุธ": 3,
-  "พฤหัสบดี": 4,
-  "ศุกร์": 5,
-  "เสาร์": 6
-};
-
-function getCancelPicker() {
-  // ถูกสร้างใน main.js
-  return window.__cancelPicker || null;
+function nextDateForDayIndex(targetIdx){
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  for(let add=0; add<21; add++){
+    const d = new Date(start);
+    d.setDate(start.getDate()+add);
+    // JS: 0=Sun ... 6=Sat
+    const js = d.getDay();
+    const th = js===0 ? 6 : js-1; // Mon->0
+    if (th === targetIdx) {
+      return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
+    }
+  }
+  return null;
 }
 
-export function initHolidayForm({ userId, displayName, subjectsUrl, submitUrl, onDone }) {
-  qs("who").textContent = displayName ? `คุณ ${displayName}` : "ผู้ใช้ LINE";
+function setMsg(el, text, kind){
+  el.className = "msg" + (kind ? ` msg--${kind}` : "");
+  el.textContent = text || "";
+}
 
-  const modeEl = qs("mode");
-  const resetBtn = qs("resetBtn");
-  const titleEl = qs("title");
-  const noteEl = qs("note");
+function groupByDay(items){
+  const map = new Map();
+  for(const it of items){
+    const day = it.day || "-";
+    if(!map.has(day)) map.set(day, []);
+    map.get(day).push(it);
+  }
+  // keep weekday order if possible
+  const keys = Array.from(map.keys()).sort((a,b)=>{
+    const ia = dayIndexTH(a); const ib = dayIndexTH(b);
+    if (ia === -1 && ib === -1) return String(a).localeCompare(String(b));
+    if (ia === -1) return 1;
+    if (ib === -1) return -1;
+    return ia - ib;
+  });
+  return keys.map(k => ({ day:k, items: map.get(k) }));
+}
 
-  const startDateEl = qs("startDate");
-  const endDateEl = qs("endDate");
-  const cancelDateEl = qs("cancelDate");
-  const cancelDateBox = qs("cancelDateBox");
-  const cancelDatePretty = document.getElementById("cancelDatePretty");
+function buildSubjectText(it){
+  const time = `${it.start_time}-${it.end_time}`;
+  const code = it.subject_code || "";
+  const type = it.type || "";
+  const name = it.subject_name || "";
+  return { time, code, type, name };
+}
 
-  // reminder inline
-  const remNoneBtn = qs("remNoneBtn");
-  const remSetBtn = qs("remSetBtn");
-  const remPicker = qs("remPicker");
-  const remDate = qs("remDate");
-  const remDatePretty = qs("remDatePretty");
-  const remHour = qs("remHour");
-  const remMinute = qs("remMinute");
+export function initHolidayForm({ userId, displayName, idToken }) {
+  // header
+  const who = document.getElementById("who");
+  if (who) who.textContent = displayName ? `คุณ ${displayName}` : "";
+
+  const msgEl = document.getElementById("msg");
+  const titleEl = document.getElementById("title");
+  const noteEl = document.getElementById("note");
+
+  const modeEl = document.getElementById("mode");
+  const allDayBox = document.getElementById("allDayBox");
+  const cancelBox = document.getElementById("cancelBox");
+
+  const startDateEl = document.getElementById("startDate");
+  const endDateEl = document.getElementById("endDate");
+  const cancelDateBox = document.getElementById("cancelDateBox");
+  const cancelDateEl = document.getElementById("cancelDate");
+  const cancelPrettyEl = document.getElementById("cancelDatePretty");
+
+  const subjectSearchEl = document.getElementById("subjectSearch");
+  const subjectsListEl = document.getElementById("subjectsList");
+  const subjectsLoadingEl = document.getElementById("subjectsLoading");
+  const selectedEl = document.getElementById("subjectSelected");
+
+  // reminders
+  const remNoneBtn = document.getElementById("remNoneBtn");
+  const remSetBtn = document.getElementById("remSetBtn");
+  const remPicker = document.getElementById("remPicker");
+  const remList = document.getElementById("remList");
+  const remAddBtn = document.getElementById("remAddBtn");
+
+  // actions
+  const resetBtn = document.getElementById("resetBtn");
+  const submitBtn = document.getElementById("submitBtn");
 
   const state = {
-    groups: [],
+    mode: modeEl?.value || "all_day",
+    subjects: [],
     selectedSubject: null,
-    submitting: false,
-    reminderEnabled: false
+    cancelDate: "",
+    remindersEnabled: false,
+    reminders: [], // {date:'YYYY-MM-DD', hour:'09', minute:'00', fp?:instance}
   };
 
-  function setReminderUI(enabled) {
-    state.reminderEnabled = !!enabled;
-
-    remNoneBtn.classList.toggle("isActive", !state.reminderEnabled);
-    remSetBtn.classList.toggle("isActive", state.reminderEnabled);
-
-    remNoneBtn.setAttribute("aria-selected", String(!state.reminderEnabled));
-    remSetBtn.setAttribute("aria-selected", String(state.reminderEnabled));
-
-    remPicker.classList.toggle("hidden", !state.reminderEnabled);
-
-    if (state.reminderEnabled) {
-      setTimeout(() => {
-        remHour.focus();
-        remHour.select();
-      }, 0);
+  const ensureOneReminder = () => {
+    if (state.reminders.length === 0) {
+      state.reminders.push({ date: "", hour: "09", minute: "00", fp: null });
     }
-  }
+  };
 
-  function getReminderHHmm() {
-    const hRaw = String(remHour.value ?? "").trim();
-    const mRaw = String(remMinute.value ?? "").trim();
-    if (!hRaw || !mRaw) return null;
-
-    const h = clampInt(hRaw, 0, 23);
-    const m = clampInt(mRaw, 0, 59);
-    if (h === null || m === null) return null;
-
-    return `${pad2(h)}:${pad2(m)}`;
-  }
-
-  function validate() {
-    const btn = qs("submitBtn");
-    if (state.submitting) {
-      btn.disabled = true;
-      return;
+  const setMode = (mode) => {
+    state.mode = mode;
+    if (mode === "all_day") {
+      allDayBox.classList.remove("hidden");
+      cancelBox.classList.add("hidden");
+      state.selectedSubject = null;
+      selectedEl.classList.add("hidden");
+      cancelDateBox.classList.add("hidden");
+      submitBtn.disabled = false;
+    } else {
+      allDayBox.classList.add("hidden");
+      cancelBox.classList.remove("hidden");
+      // need subject selection to enable submit
+      submitBtn.disabled = !state.selectedSubject;
     }
+    validate();
+  };
 
-    const modeOk =
-      modeEl.value === "cancel_subject"
-        ? !!(state.selectedSubject && cancelDateEl.value)
-        : !!startDateEl.value;
+  const setRemindersEnabled = (enabled) => {
+    state.remindersEnabled = enabled;
+    remNoneBtn.classList.toggle("isActive", !enabled);
+    remSetBtn.classList.toggle("isActive", enabled);
+    remPicker.classList.toggle("hidden", !enabled);
 
-    const reminderOk =
-      !state.reminderEnabled
-        ? true
-        : !!(remDate.value && getReminderHHmm());
-
-    btn.disabled = !(modeOk && reminderOk);
-  }
-
-  // ✅ ตั้ง filter ให้ปฏิทินยกคลาส เลือกได้เฉพาะวันของวิชาที่เลือก
-  function applyCancelDateFilterForSubject(subject) {
-    const picker = getCancelPicker();
-    if (!picker) return;
-
-    const thDay = subject?.day || "";
-    const jsDow = TH_DAY_TO_JS[thDay];
-
-    if (jsDow === undefined) {
-      // ถ้าวิชาไม่มีวันชัดเจน -> ไม่ filter
-      picker.set("disable", []);
-      if (cancelDatePretty) cancelDatePretty.textContent = "";
-      return;
-    }
-
-    picker.set("disable", [
-      (date) => date.getDay() !== jsDow
-    ]);
-
-    // helper text ให้รู้ว่าเลือกได้เฉพาะวันอะไร
-    if (cancelDatePretty) {
-      cancelDatePretty.textContent = `เลือกได้เฉพาะวัน${thDay}เท่านั้น ✅`;
-    }
-
-    // ถ้าเคยเลือกวันที่ไว้แล้ว แต่ไม่ตรงวัน -> ล้างทันที
-    if (cancelDateEl.value) {
-      const d = picker.parseDate(cancelDateEl.value, "Y-m-d");
-      if (d && d.getDay() !== jsDow) {
-        picker.clear();
-        cancelDateEl.dispatchEvent(new Event("change", { bubbles: true }));
+    if (enabled) {
+      ensureOneReminder();
+      renderReminders();
+    } else {
+      // destroy flatpickr instances
+      for (const r of state.reminders) {
+        try { r.fp?.destroy?.(); } catch {}
+        r.fp = null;
       }
     }
-  }
-
-  function pickSubject(opt) {
-    state.selectedSubject = opt;
-    setSelectedSubjectUI(opt);
-
-    cancelDateBox.classList.remove("hidden");
-
-    // ✅ สำคัญ: ปรับ filter ปฏิทินยกคลาสตามวันวิชา
-    applyCancelDateFilterForSubject(opt);
-
-    renderSubjects(state.groups, state, pickSubject);
-    applySubjectSearch();
     validate();
-  }
+  };
 
-  modeEl.addEventListener("change", () => {
-    setModeUI(modeEl.value);
-    showMsg("");
-    validate();
-  });
+  const renderSubjects = (items, filterText="") => {
+    const q = String(filterText||"").trim().toLowerCase();
+    subjectsListEl.innerHTML = "";
 
-  qs("subjectSearch").addEventListener("input", applySubjectSearch);
+    const filtered = !q ? items : items.filter((it)=>{
+      const hay = `${it.day} ${it.start_time}-${it.end_time} ${it.subject_code} ${it.subject_name} ${it.type} ${it.room}`.toLowerCase();
+      return hay.includes(q);
+    });
 
-  resetBtn.addEventListener("click", () => {
+    const groups = groupByDay(filtered);
+
+    for (const g of groups) {
+      const wrap = document.createElement("div");
+      wrap.className = "dayGroup";
+
+      const h = document.createElement("div");
+      h.className = "dayHeader";
+      h.textContent = g.day;
+      wrap.appendChild(h);
+
+      for (const it of g.items) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "subjectItem" + (state.selectedSubject?.id === it.id ? " isActive" : "");
+
+        const t = buildSubjectText(it);
+
+        const left = document.createElement("div");
+        left.className = "subjectTime";
+        left.textContent = t.time;
+
+        const main = document.createElement("div");
+        main.className = "subjectMain";
+
+        const l1 = document.createElement("div");
+        l1.className = "subjectLine1";
+
+        const code = document.createElement("div");
+        code.className = "subjectCode";
+        code.textContent = t.code;
+
+        const type = document.createElement("div");
+        type.className = "subjectTypePill";
+        type.textContent = t.type || "-";
+
+        l1.append(code, type);
+
+        const name = document.createElement("div");
+        name.className = "subjectName";
+        name.textContent = t.name;
+
+        main.append(l1, name);
+        btn.append(left, main);
+
+        btn.addEventListener("click", () => {
+          state.selectedSubject = it;
+          submitBtn.disabled = false;
+
+          // update active highlight
+          for (const el of subjectsListEl.querySelectorAll(".subjectItem")) el.classList.remove("isActive");
+          btn.classList.add("isActive");
+
+          // show selected summary
+          selectedEl.classList.remove("hidden");
+          selectedEl.innerHTML = `
+            <div style="font-weight:900;">เลือกแล้ว ✅</div>
+            <div style="margin-top:2px;">
+              ${it.day} • ${it.start_time}-${it.end_time}<br/>
+              <b>${it.subject_code}</b> ${it.subject_name} (${it.type})
+            </div>
+          `;
+
+          // show cancel date box + suggest next date for that weekday
+          cancelDateBox.classList.remove("hidden");
+          const idx = dayIndexTH(it.day);
+          const suggest = idx>=0 ? nextDateForDayIndex(idx) : null;
+          if (suggest && window.__cancelPicker) {
+            window.__cancelPicker.set("minDate", "today");
+            window.__cancelPicker.setDate(suggest, true);
+            state.cancelDate = suggest;
+            if (cancelPrettyEl) cancelPrettyEl.textContent = `แนะนำ: ${ymdToThai(suggest)} (${it.day}) ✅`;
+          } else {
+            if (cancelPrettyEl) cancelPrettyEl.textContent = `เลือกได้เฉพาะวัน ${it.day} เท่านั้น ✅`;
+          }
+          validate();
+        });
+
+        wrap.appendChild(btn);
+      }
+
+      subjectsListEl.appendChild(wrap);
+    }
+
+    if (filtered.length === 0) {
+      subjectsListEl.innerHTML = `<div style="padding:10px;color:#64748b;font-size:13px;">ไม่พบวิชาที่ค้นหา</div>`;
+    }
+  };
+
+  const renderReminders = () => {
+    remList.innerHTML = "";
+
+    state.reminders.forEach((r, idx) => {
+      const row = document.createElement("div");
+      row.className = "remRow";
+
+      const head = document.createElement("div");
+      head.className = "remRowHead";
+
+      const title = document.createElement("div");
+      title.className = "remRowTitle";
+      title.textContent = `แจ้งเตือน #${idx+1}`;
+
+      const del = document.createElement("button");
+      del.type = "button";
+      del.className = "btn btn--ghost btn--sm";
+      del.textContent = "ลบ";
+      del.disabled = state.reminders.length === 1;
+      del.addEventListener("click", ()=>{
+        // destroy picker
+        try { r.fp?.destroy?.(); } catch {}
+        state.reminders.splice(idx, 1);
+        renderReminders();
+        validate();
+      });
+
+      head.append(title, del);
+
+      const body = document.createElement("div");
+      body.className = "remRowBody";
+
+      // date
+      const dateField = document.createElement("div");
+      dateField.className = "remField";
+      dateField.innerHTML = `<label>วันที่</label>`;
+      const dateInput = document.createElement("input");
+      dateInput.type = "text";
+      dateInput.readOnly = true;
+      dateInput.placeholder = "เลือกวันที่แจ้งเตือน";
+      dateField.appendChild(dateInput);
+
+      // time
+      const timeField = document.createElement("div");
+      timeField.className = "remField";
+      timeField.innerHTML = `<label>เวลา</label>`;
+      const timeRow = document.createElement("div");
+      timeRow.className = "timeRow";
+
+      const hour = document.createElement("input");
+      hour.type = "number";
+      hour.min = "0";
+      hour.max = "23";
+      hour.inputMode = "numeric";
+      hour.value = r.hour ?? "09";
+
+      const sep = document.createElement("div");
+      sep.className = "timeSep";
+      sep.textContent = ":";
+
+      const minute = document.createElement("input");
+      minute.type = "number";
+      minute.min = "0";
+      minute.max = "59";
+      minute.inputMode = "numeric";
+      minute.value = r.minute ?? "00";
+
+      const clamp = (el, max) => {
+        let v = parseInt(el.value, 10);
+        if (Number.isNaN(v)) v = 0;
+        if (v < 0) v = 0;
+        if (v > max) v = max;
+        el.value = pad2(v);
+        return el.value;
+      };
+
+      hour.addEventListener("blur", ()=>{ r.hour = clamp(hour, 23); validate(); });
+      minute.addEventListener("blur", ()=>{ r.minute = clamp(minute, 59); validate(); });
+
+      timeRow.append(hour, sep, minute);
+      timeField.appendChild(timeRow);
+
+      body.append(dateField, timeField);
+
+      row.append(head, body);
+      remList.appendChild(row);
+
+      // init flatpickr per row
+      if (r.fp) {
+        try { r.fp.destroy(); } catch {}
+        r.fp = null;
+      }
+      r.fp = flatpickr(dateInput, {
+        dateFormat: "Y-m-d",
+        altInput: true,
+        altFormat: "d/m/Y",
+        allowInput: false,
+        disableMobile: true,
+        minDate: "today",
+        onReady: (_, __, instance) => {
+          // lock typing
+          const lock = (el) => {
+            if (!el) return;
+            el.readOnly = true;
+            el.setAttribute("inputmode", "none");
+            el.addEventListener("keydown", (e)=>e.preventDefault());
+            el.addEventListener("paste", (e)=>e.preventDefault());
+          };
+          lock(instance.input);
+          lock(instance.altInput);
+        },
+        onChange: (_, dateStr) => {
+          r.date = dateStr || "";
+          validate();
+        },
+      });
+
+      // restore
+      if (r.date) r.fp.setDate(r.date, true);
+    });
+  };
+
+  const validate = () => {
+    setMsg(msgEl, "", "");
+    let ok = true;
+
+    if (state.mode === "all_day") {
+      if (!startDateEl?.value) ok = false;
+    } else {
+      if (!state.selectedSubject) ok = false;
+      if (!state.cancelDate) ok = false;
+    }
+
+    if (state.remindersEnabled) {
+      if (state.reminders.length === 0) ok = false;
+      for (const r of state.reminders) {
+        if (!r.date) ok = false;
+        const hh = String(r.hour || "").padStart(2, "0");
+        const mm = String(r.minute || "").padStart(2, "0");
+        if (!/^\d{2}$/.test(hh) || !/^\d{2}$/.test(mm)) ok = false;
+      }
+    }
+
+    submitBtn.disabled = !ok;
+    return ok;
+  };
+
+  const buildPayload = () => {
+    const title = String(titleEl.value || "").trim() || null;
+    const note = String(noteEl.value || "").trim() || null;
+
+    let type = "holiday";
+    let subject_id = null;
+
+    let start_at, end_at;
+
+    if (state.mode === "all_day") {
+      type = "holiday";
+      const start = startDateEl.value;
+      const end = endDateEl.value || start;
+      // store as Bangkok tz fixed (00:00 to 23:59)
+      start_at = `${start}T00:00:00+07:00`;
+      end_at   = `${end}T23:59:59+07:00`;
+    } else {
+      type = "cancel";
+      subject_id = state.selectedSubject?.id ?? null;
+      const d = state.cancelDate;
+      start_at = `${d}T00:00:00+07:00`;
+      end_at   = `${d}T23:59:59+07:00`;
+    }
+
+    const reminders = [];
+    if (state.remindersEnabled) {
+      for (const r of state.reminders) {
+        if (!r.date) continue;
+        const hh = pad2(parseInt(r.hour, 10) || 0);
+        const mm = pad2(parseInt(r.minute, 10) || 0);
+        reminders.push({ remind_at: `${r.date}T${hh}:${mm}:00+07:00` });
+      }
+    }
+
+    return {
+      type,
+      subject_id,
+      all_day: 1,
+      start_at,
+      end_at,
+      title,
+      note,
+      reminders,
+    };
+  };
+
+  const resetForm = () => {
     titleEl.value = "";
     noteEl.value = "";
-    startDateEl.value = "";
-    endDateEl.value = "";
-    cancelDateEl.value = "";
+    modeEl.value = "all_day";
+    setMode("all_day");
+
+    try { document.getElementById("startDate")._flatpickr?.clear?.(); } catch {}
+    try { document.getElementById("endDate")._flatpickr?.clear?.(); } catch {}
+    try { window.__cancelPicker?.clear?.(); } catch {}
+    state.cancelDate = "";
 
     state.selectedSubject = null;
-    setSelectedSubjectUI(null);
+    selectedEl.classList.add("hidden");
     cancelDateBox.classList.add("hidden");
 
-    // ล้าง helper
-    if (cancelDatePretty) cancelDatePretty.textContent = "";
+    // reminders
+    setRemindersEnabled(false);
+    state.reminders = [];
 
-    // reset cancel picker disable
-    const picker = getCancelPicker();
-    if (picker) picker.set("disable", []);
+    validate();
+  };
 
-    // reset reminder: ไม่มีค่าเริ่มต้น
-    remDate.value = "";
-    remHour.value = "";
-    remMinute.value = "";
-    if (remDatePretty) remDatePretty.textContent = "";
-    setReminderUI(false);
+  // ===== Events =====
+  modeEl.addEventListener("change", ()=> setMode(modeEl.value));
 
-    if (state.groups.length) {
-      renderSubjects(state.groups, state, pickSubject);
-      applySubjectSearch();
-    }
+  remNoneBtn.addEventListener("click", ()=> setRemindersEnabled(false));
+  remSetBtn.addEventListener("click", ()=> setRemindersEnabled(true));
 
-    showMsg("ล้างฟอร์มแล้ว ✅", "ok");
+  remAddBtn.addEventListener("click", ()=>{
+    state.reminders.push({ date:"", hour:"09", minute:"00", fp:null });
+    renderReminders();
     validate();
   });
 
-  startDateEl.addEventListener("change", validate);
-  endDateEl.addEventListener("change", validate);
-  cancelDateEl.addEventListener("change", validate);
-  titleEl.addEventListener("input", validate);
-  noteEl.addEventListener("input", validate);
+  resetBtn.addEventListener("click", resetForm);
 
-  remNoneBtn.addEventListener("click", () => {
-    setReminderUI(false);
-    validate();
-  });
-
-  remSetBtn.addEventListener("click", () => {
-    setReminderUI(true);
-    validate();
-  });
-
-  // ✅ UX: เวลา พิมพ์ง่าย + auto jump (เวอร์ชันแก้บัคแล้ว)
-  function enhanceTimeInput(inputEl, { max, onFull }) {
-    let freshFocus = false;
-
-    inputEl.addEventListener("focus", () => {
-      freshFocus = true;
-      setTimeout(() => inputEl.select(), 0);
-    });
-
-    inputEl.addEventListener("keydown", (e) => {
-      const isDigit = e.key >= "0" && e.key <= "9";
-      const isControl =
-        e.key === "Backspace" ||
-        e.key === "Delete" ||
-        e.key === "ArrowLeft" ||
-        e.key === "ArrowRight" ||
-        e.key === "Tab";
-
-      if (isControl) return;
-
-      if (!isDigit) {
-        e.preventDefault();
-        return;
-      }
-
-      const hasSelection = inputEl.selectionStart !== inputEl.selectionEnd;
-
-      // เต็ม 2 ตัวแล้วและไม่ได้เลือก -> ไม่ให้พิมพ์เพิ่ม
-      if (!hasSelection && String(inputEl.value || "").length >= 2) {
-        e.preventDefault();
-        return;
-      }
-
-      // โฟกัสใหม่ แล้วยังไม่เลือกข้อความ (บางเครื่อง select ไม่ทัน) -> ล้างก่อนตัวแรก
-      if (freshFocus && !hasSelection) {
-        inputEl.value = "";
-      }
-      freshFocus = false;
-    });
-
-    inputEl.addEventListener("input", () => {
-      let v = String(inputEl.value || "").replace(/[^\d]/g, "");
-      if (v.length > 2) v = v.slice(0, 2);
-
-      if (v.length === 2) {
-        const n = clampInt(v, 0, max);
-        v = n === null ? "" : pad2(n);
-      }
-
-      inputEl.value = v;
-      validate();
-
-      if (inputEl.value.length === 2 && typeof onFull === "function") {
-        onFull();
-      }
-    });
-
-    inputEl.addEventListener("blur", () => {
-      const v = String(inputEl.value || "").trim();
-      if (!v) return;
-      const n = clampInt(v, 0, max);
-      inputEl.value = n === null ? "" : String(n);
-      validate();
-    });
-  }
-
-  enhanceTimeInput(remHour, {
-    max: 23,
-    onFull: () => {
-      remMinute.focus();
-      remMinute.select();
-    }
-  });
-
-  enhanceTimeInput(remMinute, {
-    max: 59,
-    onFull: () => {}
-  });
-
-  // date picker for reminder date
-  if (window.flatpickr) {
-    flatpickr(remDate, {
-      dateFormat: "Y-m-d",
-      altInput: true,
-      altFormat: "d/m/Y",
-      allowInput: false,
-      disableMobile: true,
-      minDate: "today",
-      onReady: (_, __, instance) => {
-        const lock = (el) => {
-          if (!el) return;
-          el.readOnly = true;
-          el.setAttribute("inputmode", "none");
-          el.setAttribute("autocomplete", "off");
-          el.addEventListener("keydown", (e) => e.preventDefault());
-          el.addEventListener("paste", (e) => e.preventDefault());
-        };
-        lock(instance.input);
-        lock(instance.altInput);
-      },
-      onChange: (_, dateStr) => {
-        if (remDatePretty) {
-          remDatePretty.textContent = dateStr ? `เลือก: ${prettyDMY(dateStr)}` : "";
+  if (cancelDateEl) {
+    cancelDateEl.addEventListener("change", ()=>{
+      // flatpickr updates input value in Y-m-d
+      state.cancelDate = cancelDateEl.value || "";
+      // validate day matches subject day
+      if (state.selectedSubject) {
+        const idx = dayIndexTH(state.selectedSubject.day);
+        if (idx >= 0 && state.cancelDate) {
+          const d = new Date(state.cancelDate + "T00:00:00");
+          const js = d.getDay();
+          const th = js===0 ? 6 : js-1;
+          if (th !== idx) {
+            setMsg(msgEl, `เลือกได้เฉพาะวัน ${state.selectedSubject.day} เท่านั้นนะ 🥲`, "err");
+            state.cancelDate = "";
+            try { window.__cancelPicker?.clear?.(); } catch {}
+          }
         }
-        validate();
       }
+      validate();
     });
   }
 
-  // submit
-  qs("submitBtn").addEventListener("click", async () => {
-    if (state.submitting) return;
+  if (subjectSearchEl) {
+    subjectSearchEl.addEventListener("input", ()=>{
+      renderSubjects(state.subjects, subjectSearchEl.value);
+    });
+  }
 
-    try {
-      validate();
-      if (qs("submitBtn").disabled) {
-        showMsg("กรอกข้อมูลให้ครบก่อนนะ 🙂", "err");
-        return;
-      }
+  submitBtn.addEventListener("click", async ()=>{
+    if (!validate()) return;
+    submitBtn.disabled = true;
+    setMsg(msgEl, "กำลังบันทึก…", "");
 
-      state.submitting = true;
-      setSubmitting(true);
-      showMsg("กำลังบันทึก…");
+    try{
+      const payload = buildPayload();
+      const data = await createHoliday({ idToken, payload });
 
-      const mode = modeEl.value;
-      const title = titleEl.value.trim();
-      const noteRaw = noteEl.value.trim();
-      const note = noteRaw ? noteRaw : null;
+      setMsg(msgEl, "บันทึกสำเร็จ ✅", "ok");
 
-      const hhmm = state.reminderEnabled ? getReminderHHmm() : null;
-      const reminders = state.reminderEnabled
-        ? [{ remind_at: `${remDate.value}T${hhmm}:00+07:00` }]
-        : [];
-
-      let payload;
-
-      if (mode === "cancel_subject") {
-        const date = cancelDateEl.value;
-        const { start_at, end_at } = toIsoBangkokStartEnd(date, date);
-
-        // ✅ cancel: ถ้าไม่กรอก title -> ใช้รหัส+ชื่อวิชา
-        payload = {
-          user_id: userId,
-          type: "cancel",
-          subject_id: state.selectedSubject.id,
-          all_day: 1,
-          start_at,
-          end_at,
-          title: title || `${state.selectedSubject.code} ${state.selectedSubject.name}`,
-          note,
-          reminders
-        };
-      } else {
-        const start = startDateEl.value;
-        const end = endDateEl.value || start;
-        const { start_at, end_at } = toIsoBangkokStartEnd(start, end);
-
-        // ✅ holiday: ถ้าไม่กรอก title -> ส่ง null (ไม่ยัด "วันหยุด" ลง DB)
-        payload = {
-          user_id: userId,
-          type: "holiday",
-          subject_id: null,
-          all_day: 1,
-          start_at,
-          end_at,
-          title: title ? title : null,
-          note,
-          reminders
-        };
-      }
-
-      await submitHoliday({ submitUrl, payload });
-
-      openOverlay("successOverlay");
-      setTimeout(() => {
-        closeOverlay("successOverlay");
-        try { onDone?.(); } catch {}
-      }, 900);
-
-      showMsg("บันทึกสำเร็จ ✅", "ok");
-    } catch (e) {
-      showMsg(`บันทึกไม่สำเร็จ: ${String(e?.message || e)}`, "err");
-    } finally {
-      state.submitting = false;
-      setSubmitting(false);
+      // ปิดหน้าต่าง LIFF ได้ ถ้าต้องการ
+      setTimeout(()=>{ try { liff.closeWindow(); } catch {} }, 700);
+      return data;
+    }catch(e){
+      setMsg(msgEl, `บันทึกไม่สำเร็จ: ${String(e?.message||e)}`, "err");
       validate();
     }
   });
 
-  // load subjects
-  async function loadSubjects() {
-    try {
-      showMsg("กำลังโหลดรายชื่อวิชา…");
-      const groups = await fetchSubjectGroups({ subjectsUrl, userId });
-      state.groups = Array.isArray(groups) ? groups : [];
+  // ===== Init =====
+  (async ()=>{
+    // init mode + reminders
+    setMode(state.mode);
+    setRemindersEnabled(false);
 
-      renderSubjects(state.groups, state, pickSubject);
-      applySubjectSearch();
-      showMsg("");
-    } catch (e) {
-      showMsg(`โหลดวิชาไม่สำเร็จ: ${String(e?.message || e)}`, "err");
-    } finally {
-      validate();
+    // load subjects (for cancel_subject mode)
+    try{
+      subjectsLoadingEl.classList.remove("hidden");
+      const data = await fetchSubjects({ idToken });
+      state.subjects = Array.isArray(data.items) ? data.items : [];
+      subjectsLoadingEl.textContent = state.subjects.length ? "เลือกวิชาที่จะยกคลาสได้เลย ✅" : "ไม่พบข้อมูลวิชา";
+      renderSubjects(state.subjects, "");
+    }catch(e){
+      subjectsLoadingEl.textContent = `โหลดวิชาไม่สำเร็จ: ${String(e?.message||e)}`;
     }
-  }
-
-  setModeUI(modeEl.value);
-  setReminderUI(false); // default = ไม่ตั้ง
-  showMsg("");
-  validate();
-  loadSubjects();
+  })();
 }

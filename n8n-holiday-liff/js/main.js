@@ -2,115 +2,81 @@ import { CONFIG } from "./config.js";
 import { initAndRequireLogin } from "./auth.js";
 import { initHolidayForm } from "./form.js";
 
-function showLoading(text) {
+function lockFlatpickr(instance){
+  const lock = (el) => {
+    if (!el) return;
+    el.readOnly = true;
+    el.setAttribute("inputmode", "none");
+    el.addEventListener("keydown", (e)=>e.preventDefault());
+    el.addEventListener("paste", (e)=>e.preventDefault());
+  };
+  lock(instance.input);
+  lock(instance.altInput);
+}
+
+async function boot() {
   const loading = document.getElementById("loading");
-  const subtitle = loading.querySelector(".loading__subtitle");
-  subtitle.textContent = text || "กำลังทำงาน...";
-}
+  const app = document.getElementById("app");
 
-function showApp() {
-  document.getElementById("loading").classList.add("hidden");
-  document.getElementById("app").classList.remove("hidden");
-}
-
-function initDatePickers() {
-  const common = (placeholderText) => ({
-    dateFormat: "Y-m-d",
-    altInput: true,
-    altFormat: "d/m/Y",
-    allowInput: false,
-    disableMobile: true,
-    minDate: "today",
-    onReady: (_, __, instance) => {
-      const lock = (el) => {
-        if (!el) return;
-        el.readOnly = true;
-        el.setAttribute("inputmode", "none");
-        el.setAttribute("autocomplete", "off");
-        el.placeholder = placeholderText || el.placeholder || "";
-        el.addEventListener("keydown", (e) => e.preventDefault());
-        el.addEventListener("paste", (e) => e.preventDefault());
-      };
-      lock(instance.input);
-      lock(instance.altInput);
-    }
-  });
-
-  const startEl = document.getElementById("startDate");
-  const endEl = document.getElementById("endDate");
-  const cancelEl = document.getElementById("cancelDate");
-
-  let endPicker = null;
-
-  const startPicker = startEl
-    ? flatpickr(startEl, {
-        ...common("กรุณาเลือกวันที่เริ่ม"),
-        onChange: (_, dateStr) => {
-          if (endPicker) {
-            endPicker.set("minDate", dateStr || "today");
-            if (endPicker.input.value && endPicker.input.value < dateStr) {
-              endPicker.clear();
-              endPicker.input.dispatchEvent(new Event("change", { bubbles: true }));
-            }
-          }
-        }
-      })
-    : null;
-
-  if (endEl) {
-    endPicker = flatpickr(endEl, {
-      ...common("หากหยุดวันเดียว สามารถเว้นไว้ได้"),
-      minDate: startPicker?.input?.value || "today"
-    });
-  }
-
-  // ✅ สำคัญ: เก็บ instance ของ cancelDate picker ไว้ให้ form.js ไปปรับ disable ได้
-  if (cancelEl) {
-    window.__cancelPicker = flatpickr(cancelEl, {
-      ...common("กรุณาเลือกวันที่ยกคลาส"),
-      onChange: () => {
-        // ให้ form.js validate ได้เสมอ
-        cancelEl.dispatchEvent(new Event("change", { bubbles: true }));
-      }
-    });
-  } else {
-    window.__cancelPicker = null;
-  }
-}
-
-(async () => {
   try {
-    showLoading("กำลังตรวจสอบการเข้าสู่ระบบ LINE 🔐");
+    const user = await initAndRequireLogin(CONFIG.LIFF_ID);
+    if (!user) return; // redirecting to login
 
-    const profile = await initAndRequireLogin(CONFIG.LIFF_ID);
-    if (!profile) {
-      showLoading("กำลังพาไปหน้า Login… ถ้าไม่เด้ง ให้เช็ก Allowed domains/Endpoint URL");
-      return;
-    }
+    // show UI
+    loading.classList.add("hidden");
+    app.classList.remove("hidden");
 
-    showLoading("กำลังโหลดฟอร์ม…");
-    showApp();
-    initDatePickers();
+    // flatpickr for dates
+    flatpickr("#startDate", {
+      dateFormat: "Y-m-d",
+      altInput: true,
+      altFormat: "d/m/Y",
+      disableMobile: true,
+      minDate: "today",
+      onReady: (_, __, inst) => lockFlatpickr(inst),
+      onChange: (_, dateStr) => {
+        // If endDate empty, keep it empty (single day allowed)
+        // But if endDate exists and is earlier, clear it.
+        const end = document.getElementById("endDate");
+        if (end?.value && end.value < dateStr) {
+          try { end._flatpickr.clear(); } catch {}
+        }
+      },
+    });
+
+    flatpickr("#endDate", {
+      dateFormat: "Y-m-d",
+      altInput: true,
+      altFormat: "d/m/Y",
+      disableMobile: true,
+      minDate: "today",
+      onReady: (_, __, inst) => lockFlatpickr(inst),
+    });
+
+    // cancel date picker (we expose to form.js to auto-set suggested date)
+    window.__cancelPicker = flatpickr("#cancelDate", {
+      dateFormat: "Y-m-d",
+      altInput: true,
+      altFormat: "d/m/Y",
+      disableMobile: true,
+      minDate: "today",
+      onReady: (_, __, inst) => lockFlatpickr(inst),
+    });
 
     initHolidayForm({
-      userId: profile.userId,
-      displayName: profile.displayName,
-      subjectsUrl: CONFIG.N8N_SUBJECTS_URL,
-      submitUrl: CONFIG.N8N_SUBMIT_URL,
-      onDone: () => {
-        try { liff.closeWindow(); } catch {}
-      }
+      userId: user.userId,
+      displayName: user.displayName,
+      idToken: user.idToken,
     });
   } catch (e) {
-    const loading = document.getElementById("loading");
+    console.error(e);
     loading.innerHTML = `
       <div class="loading__box">
-        <div class="loading__title">เกิดข้อผิดพลาด ❌</div>
+        <div class="loading__title">เปิดฟอร์มไม่สำเร็จ 🥲</div>
         <div class="loading__subtitle">${String(e?.message || e)}</div>
-        <div style="margin-top:10px;color:#666;font-size:12px;">
-          ตรวจสอบ CONFIG (LIFF_ID/URLs) และเปิดจากใน LINE LIFF
-        </div>
       </div>
     `;
   }
-})();
+}
+
+boot();
