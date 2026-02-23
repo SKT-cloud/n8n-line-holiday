@@ -513,6 +513,7 @@ export function initHolidayForm({ userId, displayName, subjectsUrl, submitUrl, o
         const date = cancelDateEl.value;
         const { start_at, end_at } = toIsoBangkokStartEnd(date, date);
 
+        // ✅ cancel: ถ้าไม่กรอก title -> ใช้รหัส+ชื่อวิชา
         payload = {
           user_id: userId,
           type: "cancel",
@@ -529,6 +530,7 @@ export function initHolidayForm({ userId, displayName, subjectsUrl, submitUrl, o
         const end = endDateEl.value || start;
         const { start_at, end_at } = toIsoBangkokStartEnd(start, end);
 
+        // ✅ holiday: ถ้าไม่กรอก title -> ส่ง null (ไม่ยัด "วันหยุด" ลง DB)
         payload = {
           user_id: userId,
           type: "holiday",
@@ -536,7 +538,7 @@ export function initHolidayForm({ userId, displayName, subjectsUrl, submitUrl, o
           all_day: 1,
           start_at,
           end_at,
-          title: title || "วันหยุด",
+          title: title ? title : null,
           note: null,
           reminders
         };
