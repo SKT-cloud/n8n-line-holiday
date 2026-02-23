@@ -316,56 +316,73 @@ export function initHolidayForm({ userId, displayName, subjectsUrl, submitUrl, o
 
   // ✅ UX: กดแล้วพิมพ์ง่าย + auto jump
   function enhanceTimeInput(inputEl, { max, onFull }) {
-    // โฟกัสแล้ว select ทั้งหมด
+    // flag: เพิ่งโฟกัสมา ให้พิมพ์ตัวแรก “ทับ” ค่าเก่า
+    let freshFocus = false;
+
     inputEl.addEventListener("focus", () => {
+      freshFocus = true;
       setTimeout(() => inputEl.select(), 0);
     });
 
-    // กดพิมพ์ตัวเลขแล้วแทนของเก่าทันที (ถ้าไม่ได้ select ทั้งหมด)
     inputEl.addEventListener("keydown", (e) => {
       const isDigit = e.key >= "0" && e.key <= "9";
-      if (!isDigit) return;
+      const isControl =
+        e.key === "Backspace" ||
+        e.key === "Delete" ||
+        e.key === "ArrowLeft" ||
+        e.key === "ArrowRight" ||
+        e.key === "Tab";
 
-      const fullSelected =
-        inputEl.selectionStart === 0 &&
-        inputEl.selectionEnd === inputEl.value.length;
+      if (isControl) return;
 
-      if (!fullSelected && inputEl.value) {
+      // กันการพิมพ์อื่นๆ ที่ไม่ใช่ตัวเลข
+      if (!isDigit) {
+        e.preventDefault();
+        return;
+      }
+
+      // ถ้าเต็ม 2 ตัวแล้ว และไม่ได้เลือกข้อความไว้ → กันไม่ให้พิมพ์เกิน
+      const hasSelection = inputEl.selectionStart !== inputEl.selectionEnd;
+      if (!hasSelection && String(inputEl.value || "").length >= 2) {
+        e.preventDefault();
+        return;
+      }
+
+      // ถ้าเพิ่งโฟกัสมา แล้วไม่ได้เลือกทั้งช่อง (บางเครื่อง select ไม่ทัน)
+      // ให้ล้างก่อนพิมพ์ตัวแรกเพื่อให้ทับง่าย
+      if (freshFocus && !hasSelection) {
         inputEl.value = "";
       }
+      freshFocus = false;
     });
 
-    // จำกัดให้เป็นตัวเลข 0-9 เท่านั้น + ไม่เกิน 2 ตัว + clamp ช่วง
     inputEl.addEventListener("input", () => {
-      // เอาเฉพาะตัวเลข
-      inputEl.value = String(inputEl.value || "").replace(/[^\d]/g, "");
+      // เอาเฉพาะตัวเลข + จำกัด 2 ตัว
+      let v = String(inputEl.value || "").replace(/[^\d]/g, "");
+      if (v.length > 2) v = v.slice(0, 2);
 
-      // ไม่เกิน 2 ตัว
-      if (inputEl.value.length > 2) inputEl.value = inputEl.value.slice(0, 2);
-
-      // ถ้ามีค่าแล้วลอง clamp
-      if (inputEl.value.length > 0) {
-        const n = clampInt(inputEl.value, 0, max);
-        if (n === null) {
-          inputEl.value = "";
-        } else if (String(n) !== inputEl.value && inputEl.value.length === 2) {
-          // ถ้าพิมพ์ 2 ตัวแล้วเกินช่วง เช่น 99 -> clamp ให้เลย
-          inputEl.value = String(n);
-        }
+      // clamp เมื่อพิมพ์ครบ 2 ตัว (หรือจะ clamp ทุกครั้งก็ได้ แต่แบบนี้ UX ดีกว่า)
+      if (v.length === 2) {
+        const n = clampInt(v, 0, max);
+        if (n === null) v = "";
+        else v = pad2(n);
       }
 
+      inputEl.value = v;
       validate();
 
-      // ✅ พิมพ์ครบ 2 ตัวให้เด้งช่องถัดไป
+      // พิมพ์ครบ 2 ตัว → เด้งช่องถัดไป
       if (inputEl.value.length === 2 && typeof onFull === "function") {
         onFull();
       }
     });
 
-    // ถ้าออกจากช่องแล้ว clamp อีกทีแบบชัวร์ + เลข 1 ตัวคงไว้ได้
     inputEl.addEventListener("blur", () => {
-      if (!inputEl.value) return;
-      const n = clampInt(inputEl.value, 0, max);
+      // blur แล้ว clamp แบบชัวร์ ถ้ามีค่า
+      const v = String(inputEl.value || "").trim();
+      if (!v) return;
+
+      const n = clampInt(v, 0, max);
       inputEl.value = n === null ? "" : String(n);
       validate();
     });
@@ -480,7 +497,7 @@ export function initHolidayForm({ userId, displayName, subjectsUrl, submitUrl, o
       openOverlay("successOverlay");
       setTimeout(() => {
         closeOverlay("successOverlay");
-        try { onDone?.(); } catch {}
+        try { onDone?.(); } catch { }
       }, 900);
 
       showMsg("บันทึกสำเร็จ ✅", "ok");
