@@ -1,14 +1,9 @@
 import { CONFIG } from "./config.js";
 
-function joinUrl(base, path) {
-  const b = String(base).replace(/\/+$/, "");
-  const p = String(path || "").replace(/^\/+/, "");
-  return `${b}/${p}`;
-}
-
-async function requestJson(url, { method = "GET", token, body } = {}) {
+async function requestJson(path, { method="GET", idToken, body } = {}) {
+  const url = CONFIG.joinUrl(CONFIG.WORKER_BASE, path);
   const headers = { "Content-Type": "application/json" };
-  if (token) headers["Authorization"] = `Bearer ${token}`;
+  if (idToken) headers.Authorization = `Bearer ${idToken}`;
 
   const res = await fetch(url, {
     method,
@@ -17,7 +12,7 @@ async function requestJson(url, { method = "GET", token, body } = {}) {
   });
 
   const data = await res.json().catch(() => ({}));
-  if (!res.ok || data?.ok === false) {
+  if (!res.ok || data.ok === false) {
     const msg = data?.error || data?.message || `HTTP ${res.status}`;
     throw new Error(msg);
   }
@@ -25,11 +20,12 @@ async function requestJson(url, { method = "GET", token, body } = {}) {
 }
 
 export async function fetchSubjects({ idToken }) {
-  const url = joinUrl(CONFIG.WORKER_BASE, CONFIG.SUBJECTS_URL);
-  return requestJson(url, { method: "GET", token: idToken });
+  // ✅ Worker: GET /liff/subjects
+  const data = await requestJson("/liff/subjects", { method: "GET", idToken });
+  return data.items || [];
 }
 
 export async function createHoliday({ idToken, payload }) {
-  const url = joinUrl(CONFIG.WORKER_BASE, CONFIG.CREATE_URL);
-  return requestJson(url, { method: "POST", token: idToken, body: payload });
+  // ✅ Worker: POST /liff/holidays/create
+  return requestJson("/liff/holidays/create", { method: "POST", idToken, body: payload });
 }

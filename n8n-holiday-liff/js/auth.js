@@ -1,20 +1,20 @@
-export async function initAndRequireLogin(liffId) {
+import { CONFIG } from "./config.js";
+
+export async function initLiff() {
   if (!window.liff) throw new Error("LIFF SDK not loaded");
 
-  await liff.init({ liffId });
+  const liffId = CONFIG.getLiffId();
+  await window.liff.init({ liffId });
 
-  if (!liff.isLoggedIn()) {
-    liff.login({ redirectUri: window.location.href });
-    return null;
+  if (!window.liff.isLoggedIn()) {
+    window.liff.login();
+    return;
   }
 
-  const profile = await liff.getProfile();
-  const idToken = liff.getIDToken();
+  // ID Token (ใช้ verify ใน Worker)
+  const idToken = window.liff.getIDToken();
+  if (!idToken) throw new Error("missing idToken (getIDToken)");
 
-  if (!idToken) {
-    // Usually happens if LIFF is not opened inside LINE app / or channel settings issue
-    throw new Error("ไม่พบ idToken (เปิดผ่าน LIFF ใน LINE และเช็ก LIFF settings)");
-  }
-
-  return { ...profile, idToken };
+  const profile = await window.liff.getProfile();
+  return { idToken, profile };
 }

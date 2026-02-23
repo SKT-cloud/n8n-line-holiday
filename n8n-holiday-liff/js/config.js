@@ -1,14 +1,23 @@
 export const CONFIG = {
-  // ✅ ใส่ LIFF ID ของคุณ
-  LIFF_ID: "YOUR_LIFF_ID",
+  // ✅ Worker base
+  WORKER_BASE: "https://study-holiday-api.suwijuck-kat.workers.dev",
 
-  // ✅ Base URL ของ Cloudflare Worker (ที่มี /liff/subjects และ /liff/holidays/create)
-  WORKER_BASE: "https://YOUR-WORKER.your-domain.workers.dev",
+  // ✅ LIFF IDs (ของคุณ)
+  LIFF_ID_ADD: "2009146879-xoNc2sVq",      // StudyBot holiday
+  LIFF_ID_EDIT: "2009146879-3eBGpF5j",    // StudyBot holiday edit
 
-  // endpoints (ไม่ต้องแก้ถ้าใช้ตาม worker ด้านล่าง)
-  SUBJECTS_URL: "/liff/subjects",
-  CREATE_URL: "/liff/holidays/create",
+  // mode: "add" | "edit"  (เลือกจาก pathname)
+  getMode() {
+    const p = (location.pathname || "/").toLowerCase();
+    if (p.endsWith("/edit.html") || p.endsWith("/edit") || p.includes("edit")) return "edit";
+    return "add";
+  },
 
-  // (optional) ถ้าต้องการให้บอทส่ง Flex ยืนยันผ่าน n8n ตอนบันทึกสำเร็จ (ไม่จำเป็น)
-  // N8N_CONFIRM_URL: "https://spu-n8n.spu.ac.th/webhook-test/liff-submit"
+  getLiffId() {
+    return this.getMode() === "edit" ? this.LIFF_ID_EDIT : this.LIFF_ID_ADD;
+  },
 };
+
+export function joinUrl(base, path) {
+  return String(base).replace(/\/+$/, "") + "/" + String(path).replace(/^\/+/, "");
+}

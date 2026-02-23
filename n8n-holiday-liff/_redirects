@@ -1,3 +1,6 @@
+# Serve static assets as-is
 /css/*  /css/:splat  200
 /js/*   /js/:splat   200
+
+# SPA fallback
 /*      /index.html  200
