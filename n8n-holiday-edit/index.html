@@ -16,62 +16,23 @@
     <div class="container topbar__inner">
       <div class="topbar__left">
         <h1 class="h1">แก้ไข / ลบวันหยุด</h1>
-        <p class="sub" id="subtitle">กำลังเริ่มต้น…</p>
+        <p class="sub" id="subtitle">กำลังโหลดข้อมูล…</p>
       </div>
 
       <div class="topbar__right">
-        <button class="btn btn--ghost" id="btnReload" type="button">โหลดใหม่</button>
-        <button class="btn btn--ghost" id="btnSettings" type="button">ตั้งค่า</button>
+        <!-- Production: ไม่ต้องมีปุ่มตั้งค่า/โหลดใหม่ -->
       </div>
     </div>
   </header>
 
   <main class="container">
-    <!-- Settings -->
-    <section class="panel" id="settingsPanel" hidden>
-      <div class="panel__head">
-        <h2 class="h2">ตั้งค่าการเชื่อมต่อ</h2>
-        <p class="help">
-          ใส่ API Base ของ Worker เท่านั้น (ระบบจะส่ง LIFF idToken ให้อัตโนมัติ)
-        </p>
-      </div>
-
-      <div class="grid2">
-        <div>
-          <label class="label">API Base</label>
-          <input class="input" id="apiBase" type="text" placeholder="https://<your-worker-domain>" />
-          <div class="hint">ตัวอย่าง: https://xxx.workers.dev</div>
-        </div>
-
-        <div>
-          <label class="label">หมายเหตุ</label>
-          <div class="hint">
-            ✅ หน้าเว็บนี้จะบังคับล็อกอิน LINE ก่อน<br/>
-            ✅ Worker จะอนุญาตให้แก้/ลบได้เฉพาะข้อมูลของ userId ตัวเองเท่านั้น
-          </div>
-        </div>
-      </div>
-
-      <div class="panel__actions">
-        <button class="btn btn--ghost" id="btnClearSettings" type="button">ล้าง</button>
-        <button class="btn btn--primary" id="btnSaveSettings" type="button">บันทึกตั้งค่า</button>
-      </div>
-
-      <hr class="hr" />
-
-      <div class="metaRow">
-        <div class="pill">ช่วงข้อมูล: <span id="rangeLabel">—</span></div>
-        <div class="pill">userId: <span id="userLabel">—</span></div>
-      </div>
-    </section>
-
     <!-- List -->
     <section class="list" id="list"></section>
 
     <!-- Empty -->
     <section class="empty" id="empty" hidden>
       <h2 class="h2">ยังไม่มีรายการในช่วงนี้</h2>
-      <p class="help">ลองกด “โหลดใหม่” หรือค่อยปรับช่วงเวลาในขั้นต่อไปได้ ✨</p>
+      <p class="help">ถ้ายังไม่เคยเพิ่มวันหยุด/ยกคลาส ลองไปเพิ่มก่อนน้า 😊</p>
     </section>
   </main>
 
@@ -112,13 +73,12 @@
       </div>
 
       <div class="mt12">
-        <label class="label">Title (ปล่อยว่างได้)</label>
+        <label class="label">หัวข้อ (ปล่อยว่างได้)</label>
         <input class="input" type="text" id="mTitle" placeholder="เช่น สอบ / งานพิเศษ / ไปต่างจังหวัด" />
-        <div class="hint">holiday: ว่าง = ส่ง null • cancel: ว่าง = ปล่อยให้ Worker fallback</div>
       </div>
 
       <div class="mt12">
-        <label class="label">Note (optional)</label>
+        <label class="label">หมายเหตุ (optional)</label>
         <textarea class="textarea" id="mNote" placeholder="รายละเอียดเพิ่มเติม…"></textarea>
       </div>
 

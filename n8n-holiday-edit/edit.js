@@ -1,27 +1,18 @@
-// edit.js — LIFF Holiday Edit/Delete (minimal white)
-// ✅ บังคับ Login LINE ก่อน
-// ✅ หลัง login: getProfile().userId -> แสดง label
-// ✅ เรียก Worker ด้วย LIFF idToken -> Worker จะล็อก userId ให้เอง
-// ✅ แก้/ลบหลายรายการ + save ทีเดียว (batch)
+// edit.js — Production (no settings UI)
+// ✅ Login LINE ก่อน
+// ✅ เรียก Worker ด้วย LIFF idToken
+// ✅ ดึง/แก้/ลบผ่าน /liff/holidays/*
+// ✅ Batch save + close modal ได้ 100%
 
-// ✅ เหลือแค่ API Base พอ (ไม่ใช้ API KEY แล้ว)
-const LS_API_BASE = "holiday_api_base";
+// ===== PRODUCTION CONFIG =====
+const API_BASE = "https://study-holiday-api.suwijuck-kat.workers.dev";
+// =============================
 
 const els = {
   subtitle: document.getElementById("subtitle"),
-  rangeLabel: document.getElementById("rangeLabel"),
-  userLabel: document.getElementById("userLabel"),
 
   list: document.getElementById("list"),
   empty: document.getElementById("empty"),
-
-  btnReload: document.getElementById("btnReload"),
-  btnSettings: document.getElementById("btnSettings"),
-
-  settingsPanel: document.getElementById("settingsPanel"),
-  apiBase: document.getElementById("apiBase"),
-  btnSaveSettings: document.getElementById("btnSaveSettings"),
-  btnClearSettings: document.getElementById("btnClearSettings"),
 
   btnDiscard: document.getElementById("btnDiscard"),
   btnSave: document.getElementById("btnSave"),
@@ -61,32 +52,21 @@ function toast(msg, ms = 1600) {
 function pad2(n){ return String(n).padStart(2,"0"); }
 function ymd(d){ return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`; }
 
-function getApiBase(){
-  return (localStorage.getItem(LS_API_BASE) || "").trim().replace(/\/+$/,"");
-}
-function setApiBase(base){
-  localStorage.setItem(LS_API_BASE, (base||"").trim());
-}
-
 function getIdTokenOrThrow(){
   const token = liff.getIDToken?.();
-  if (!token) throw new Error("ยังไม่ได้เปิด scope openid หรือยังไม่พร้อมใช้งาน idToken");
+  if (!token) throw new Error("ไม่พบ idToken (ตรวจว่า LIFF เปิด scope openid แล้ว)");
   return token;
 }
 
 async function apiFetch(path, { method="GET", body=null } = {}) {
-  const base = getApiBase();
-  if (!base) throw new Error("ยังไม่ตั้งค่า API Base");
-
   const idToken = getIdTokenOrThrow();
-  const headers = {
-    "Content-Type": "application/json",
-    "Authorization": `Bearer ${idToken}`,
-  };
 
-  const res = await fetch(`${base}${path}`, {
+  const res = await fetch(`${API_BASE}${path}`, {
     method,
-    headers,
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${idToken}`,
+    },
     body: body ? JSON.stringify(body) : null,
   });
 
@@ -97,15 +77,12 @@ async function apiFetch(path, { method="GET", body=null } = {}) {
 
   if (!res.ok) {
     const msg = data?.error || data?.message || `HTTP ${res.status}`;
-    const e = new Error(msg);
-    e.status = res.status;
-    e.data = data;
-    throw e;
+    throw new Error(msg);
   }
   return data;
 }
 
-// --- data normalize ---
+// --- normalize ---
 function inferType(it){
   const t = (it.mode || it.type || it.kind || "").toString();
   if (t.includes("cancel")) return "cancel";
@@ -121,20 +98,29 @@ function normalizeItem(raw){
   const type     = inferType(raw);
   return { ...raw, id, start_at, end_at, title, note, type };
 }
+
 function iconForType(type){ return type === "cancel" ? "🚫" : "📌"; }
-function labelForType(type){ return type === "cancel" ? "ยกคลาส" : "วันหยุด"; }
+
+function labelTitle(it, title){
+  if (it.type === "cancel") {
+    return `🚫 ยกคลาส: ${title || "ยกคลาส"}`;
+  }
+  return title ? `📌 วันหยุด: ${title}` : `📌 วันหยุด`;
+}
+
 function humanRange(start, end){
   if (!end || end === start) return start;
   return `${start} → ${end}`;
 }
 
 function isDirty(){ return state.edits.size > 0 || state.deletes.size > 0; }
+
 function updateFooter(){
   els.countLabel.textContent = `แก้ไข ${state.edits.size} รายการ • ลบ ${state.deletes.size} รายการ`;
   els.btnSave.disabled = !isDirty();
 }
 
-// --- render ---
+// --- render list ---
 function render(){
   els.list.innerHTML = "";
 
@@ -145,17 +131,10 @@ function render(){
     const deleted = state.deletes.has(it.id);
     const pending = state.edits.get(it.id) || {};
 
-    let start = ("start_at" in pending) ? pending.start_at : it.start_at;
-    let end   = ("end_at" in pending) ? pending.end_at : it.end_at;
-
-    let title = ("title" in pending) ? pending.title : it.title;
-    let note  = ("note" in pending) ? pending.note : it.note;
-
-    const icon = iconForType(it.type);
-    const titleLine =
-      it.type === "holiday"
-        ? (title ? `${icon} วันหยุด: ${title}` : `${icon} วันหยุด`)
-        : `${icon} ยกคลาส: ${title || "ยกคลาส"}`;
+    const start = ("start_at" in pending) ? pending.start_at : it.start_at;
+    const end   = ("end_at" in pending) ? pending.end_at : it.end_at;
+    const title = ("title" in pending) ? pending.title : it.title;
+    const note  = ("note" in pending) ? pending.note : it.note;
 
     const card = document.createElement("div");
     card.className = "card" + (deleted ? " deleted" : "");
@@ -168,14 +147,14 @@ function render(){
 
     const h = document.createElement("p");
     h.className = "headline";
-    h.textContent = titleLine;
+    h.textContent = labelTitle(it, title);
 
     const tags = document.createElement("div");
     tags.className = "tags";
 
     const tagType = document.createElement("span");
     tagType.className = "tag";
-    tagType.textContent = `${labelForType(it.type)}`;
+    tagType.textContent = it.type === "cancel" ? "ยกคลาส" : "วันหยุด";
 
     const tagDate = document.createElement("span");
     tagDate.className = "tag";
@@ -189,7 +168,7 @@ function render(){
 
     const n = document.createElement("div");
     n.className = "note";
-    n.textContent = note ? `📝 ${note}` : "📝 (ไม่มีโน้ต)";
+    n.textContent = note ? `📝 ${note}` : "📝 (ไม่มีหมายเหตุ)";
 
     left.append(h, tags, n);
 
@@ -221,7 +200,7 @@ function render(){
   updateFooter();
 }
 
-// --- modal ---
+// --- modal controls ---
 function openModal(id){
   state.currentId = id;
   const it = state.items.find(x => x.id === id);
@@ -233,8 +212,8 @@ function openModal(id){
   const title = ("title" in pending) ? pending.title : (it.title ?? "");
   const note  = ("note" in pending) ? pending.note : (it.note ?? "");
 
-  els.modalTitle.textContent = `${iconForType(it.type)} ${labelForType(it.type)} • แก้ไข`;
-  els.modalMeta.textContent = `id: ${id} • userId: ${state.userId}`;
+  els.modalTitle.textContent = `${iconForType(it.type)} แก้ไขรายการ`;
+  els.modalMeta.textContent = ""; // production: ไม่โชว์ id/user
 
   els.mStart.value = start || "";
   els.mEnd.value = end || "";
@@ -246,10 +225,12 @@ function openModal(id){
   els.btnUndoDelete.hidden = !deleted;
 
   els.overlay.hidden = false;
+  els.overlay.style.display = "flex";
 }
 
 function closeModal(){
   els.overlay.hidden = true;
+  els.overlay.style.display = "none";
   state.currentId = null;
 }
 
@@ -275,7 +256,6 @@ function applyModal(){
 
   const note = noteRaw ? noteRaw : null;
 
-  // เก็บเฉพาะ field ที่เปลี่ยนจริง (ไม่ต้องส่ง user_id แล้ว)
   const changed = { id };
   let dirty = false;
 
@@ -289,7 +269,7 @@ function applyModal(){
     toast("ไม่มีอะไรเปลี่ยนแปลง");
   } else {
     state.edits.set(id, changed);
-    toast("เก็บการแก้ไขไว้ในร่างแล้ว ✅");
+    toast("เก็บการแก้ไขไว้แล้ว ✅");
   }
 
   render();
@@ -309,10 +289,7 @@ async function loadList(){
 
   const from = state.range.from;
   const to = state.range.to;
-  els.rangeLabel.textContent = `${from} → ${to}`;
-  els.userLabel.textContent = state.userId ? state.userId : "—";
 
-  // ✅ เปลี่ยนเป็น LIFF endpoint (ไม่ส่ง user_id)
   const url = `/liff/holidays/list?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
 
   const data = await apiFetch(url);
@@ -320,11 +297,10 @@ async function loadList(){
   state.items = arr.map(normalizeItem).filter(x => x.id != null);
   state.items.sort((a,b) => (a.start_at || "").localeCompare(b.start_at || ""));
 
-  // reset draft เมื่อโหลดใหม่
   state.edits.clear();
   state.deletes.clear();
 
-  els.subtitle.textContent = `โหลดแล้ว ${state.items.length} รายการ`;
+  els.subtitle.textContent = `พบ ${state.items.length} รายการ`;
   toast(`โหลดแล้ว ${state.items.length} รายการ ✅`);
   render();
 }
@@ -335,8 +311,8 @@ async function saveAll(){
   els.btnSave.disabled = true;
   toast("กำลังบันทึก…");
 
-  const updates = Array.from(state.edits.values()); // [{id, ...fields}]
-  const deletes = Array.from(state.deletes.values()); // [id, id, ...]
+  const updates = Array.from(state.edits.values());
+  const deletes = Array.from(state.deletes.values());
 
   try {
     await apiFetch(`/liff/holidays/batch`, {
@@ -367,37 +343,13 @@ async function saveAll(){
   }
 }
 
-// --- settings UI ---
-function initSettingsUI(){
-  els.apiBase.value = localStorage.getItem(LS_API_BASE) || "";
-
-  els.btnSettings.onclick = () => {
-    els.settingsPanel.hidden = !els.settingsPanel.hidden;
-  };
-
-  els.btnSaveSettings.onclick = () => {
-    setApiBase(els.apiBase.value);
-    toast("บันทึกตั้งค่าแล้ว ✅");
-  };
-
-  els.btnClearSettings.onclick = () => {
-    setApiBase("");
-    els.apiBase.value = "";
-    toast("ล้างตั้งค่าแล้ว");
-  };
-}
-
 // --- bind UI ---
 function bindUI(){
-  els.btnReload.onclick = async () => {
-    try { await loadList(); }
-    catch (e) { toast(`โหลดไม่สำเร็จ: ${e.message}`); }
-  };
-
   els.btnDiscard.onclick = discardAll;
   els.btnSave.onclick = saveAll;
 
   els.btnCloseModal.onclick = closeModal;
+
   els.overlay.addEventListener("click", (e) => {
     if (e.target === els.overlay) closeModal();
   });
@@ -425,55 +377,44 @@ function bindUI(){
 
 // --- LIFF init (login-first) ---
 async function initLiffLoginFirst(){
-  els.subtitle.textContent = "กำลัง init LIFF…";
+  els.subtitle.textContent = "กำลังเริ่มต้น…";
   await liff.init({ withLoginOnExternalBrowser: true });
 
-  // ✅ บังคับ Login ก่อนใช้งาน
   if (!liff.isLoggedIn()) {
     els.subtitle.textContent = "กำลังพาไปล็อกอิน LINE…";
     liff.login({ redirectUri: window.location.href });
     return;
   }
 
+  // ต้องมี idToken (scope openid)
+  getIdTokenOrThrow();
+
+  // profile เอาไว้ใช้ future (ถ้าจะโชว์ชื่อ)
   const profile = await liff.getProfile();
   state.userId = profile.userId;
 
-  // บังคับว่าต้องมี idToken (ต้องเปิด scope openid)
-  getIdTokenOrThrow();
-
-  els.userLabel.textContent = state.userId;
   els.subtitle.textContent = "พร้อมใช้งาน ✅";
 }
 
 // --- main ---
 (async function main(){
-  // range default: today-30 to today+90
+  // range: today-30 to today+90
   const now = new Date();
   const fromD = new Date(now); fromD.setDate(fromD.getDate() - 30);
   const toD   = new Date(now); toD.setDate(toD.getDate() + 90);
   state.range.from = ymd(fromD);
   state.range.to   = ymd(toD);
-  els.rangeLabel.textContent = `${state.range.from} → ${state.range.to}`;
 
-  initSettingsUI();
   bindUI();
 
   try {
     await initLiffLoginFirst();
-
-    if (!state.userId) return; // ตอน redirect ไป login
-
-    if (!getApiBase()) {
-      els.settingsPanel.hidden = false;
-      toast("ใส่ API Base ก่อนนะครับ ⚙️", 2200);
-      return;
-    }
+    if (!state.userId) return; // redirect to login
 
     await loadList();
   } catch (e) {
     console.error(e);
     els.subtitle.textContent = "เริ่มต้นไม่สำเร็จ";
-    els.settingsPanel.hidden = false;
     toast(`เริ่มต้นไม่สำเร็จ: ${e.message}`);
   }
 })();
