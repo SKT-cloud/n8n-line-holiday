@@ -8,14 +8,11 @@
   <link rel="stylesheet" href="./css/style.css" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css" />
 
-  <!-- LIFF SDK -->
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
-  <!-- Flatpickr -->
   <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
 </head>
 
 <body>
-  <!-- Loading -->
   <div id="loading" class="loading">
     <div class="loading__box">
       <div class="loading__title">กำลังเตรียมฟอร์ม…</div>
@@ -23,26 +20,22 @@
     </div>
   </div>
 
-  <!-- App -->
   <main id="app" class="card hidden">
     <header class="card__header">
       <h1 class="card__title">เพิ่มวันหยุด</h1>
       <div id="who" class="pill"></div>
     </header>
 
-    <!-- Title -->
     <section class="field">
       <label for="title">หัวข้อ (ไม่จำเป็น)</label>
       <input id="title" type="text" placeholder="เช่น ไปอบรม / ป่วย" autocomplete="off" />
     </section>
 
-    <!-- Note -->
     <section class="field">
       <label for="note">หมายเหตุ (ไม่จำเป็น)</label>
       <textarea id="note" rows="3" placeholder="เช่น สถานที่ / เหตุผล / รายละเอียดเพิ่มเติม"></textarea>
     </section>
 
-    <!-- Mode -->
     <section class="field">
       <label for="mode">ประเภท</label>
       <select id="mode">
@@ -51,7 +44,6 @@
       </select>
     </section>
 
-    <!-- All day -->
     <section id="allDayBox" class="section">
       <div class="field">
         <label>ช่วงวันที่หยุด</label>
@@ -68,7 +60,6 @@
       </div>
     </section>
 
-    <!-- Cancel subject -->
     <section id="cancelBox" class="section hidden">
       <div class="field">
         <label>เลือกวิชาที่จะยกคลาส</label>
@@ -93,7 +84,6 @@
       </div>
     </section>
 
-    <!-- Reminders -->
     <section id="reminderInline" class="section">
       <label>แจ้งเตือน</label>
       <div class="segmented" role="group" aria-label="ตัวเลือกแจ้งเตือน">
@@ -112,8 +102,8 @@
       </div>
     </section>
 
-    <!-- Actions -->
-    <div class="formActions formActions--sticky">
+    <!-- Actions (not sticky) -->
+    <div class="formActions">
       <button id="resetBtn" class="btn btn--ghost btn--sm" type="button">ล้างฟอร์ม</button>
       <button id="submitBtn" class="btn btn--primary btn--sm" disabled>บันทึก</button>
     </div>
