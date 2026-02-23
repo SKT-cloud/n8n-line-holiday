@@ -64,10 +64,17 @@ function initDatePickers() {
     });
   }
 
+  // ✅ สำคัญ: เก็บ instance ของ cancelDate picker ไว้ให้ form.js ไปปรับ disable ได้
   if (cancelEl) {
-    flatpickr(cancelEl, {
-      ...common("กรุณาเลือกวันที่ยกคลาส")
+    window.__cancelPicker = flatpickr(cancelEl, {
+      ...common("กรุณาเลือกวันที่ยกคลาส"),
+      onChange: () => {
+        // ให้ form.js validate ได้เสมอ
+        cancelEl.dispatchEvent(new Event("change", { bubbles: true }));
+      }
     });
+  } else {
+    window.__cancelPicker = null;
   }
 }
 

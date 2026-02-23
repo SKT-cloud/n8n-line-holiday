@@ -175,6 +175,22 @@ function pad2(n) {
   return String(n).padStart(2, "0");
 }
 
+/* ===== cancel-date day filter helpers ===== */
+const TH_DAY_TO_JS = {
+  "อาทิตย์": 0,
+  "จันทร์": 1,
+  "อังคาร": 2,
+  "พุธ": 3,
+  "พฤหัสบดี": 4,
+  "ศุกร์": 5,
+  "เสาร์": 6
+};
+
+function getCancelPicker() {
+  // ถูกสร้างใน main.js
+  return window.__cancelPicker || null;
+}
+
 export function initHolidayForm({ userId, displayName, subjectsUrl, submitUrl, onDone }) {
   qs("who").textContent = displayName ? `คุณ ${displayName}` : "ผู้ใช้ LINE";
 
@@ -186,6 +202,7 @@ export function initHolidayForm({ userId, displayName, subjectsUrl, submitUrl, o
   const endDateEl = qs("endDate");
   const cancelDateEl = qs("cancelDate");
   const cancelDateBox = qs("cancelDateBox");
+  const cancelDatePretty = document.getElementById("cancelDatePretty");
 
   // reminder inline
   const remNoneBtn = qs("remNoneBtn");
@@ -214,7 +231,6 @@ export function initHolidayForm({ userId, displayName, subjectsUrl, submitUrl, o
 
     remPicker.classList.toggle("hidden", !state.reminderEnabled);
 
-    // ✅ ถ้าเพิ่งเปิดตั้งแจ้งเตือน ให้โฟกัสช่องชั่วโมงทันที (พิมพ์ต่อได้เลย)
     if (state.reminderEnabled) {
       setTimeout(() => {
         remHour.focus();
@@ -255,10 +271,48 @@ export function initHolidayForm({ userId, displayName, subjectsUrl, submitUrl, o
     btn.disabled = !(modeOk && reminderOk);
   }
 
+  // ✅ ตั้ง filter ให้ปฏิทินยกคลาส เลือกได้เฉพาะวันของวิชาที่เลือก
+  function applyCancelDateFilterForSubject(subject) {
+    const picker = getCancelPicker();
+    if (!picker) return;
+
+    const thDay = subject?.day || "";
+    const jsDow = TH_DAY_TO_JS[thDay];
+
+    if (jsDow === undefined) {
+      // ถ้าวิชาไม่มีวันชัดเจน -> ไม่ filter
+      picker.set("disable", []);
+      if (cancelDatePretty) cancelDatePretty.textContent = "";
+      return;
+    }
+
+    picker.set("disable", [
+      (date) => date.getDay() !== jsDow
+    ]);
+
+    // helper text ให้รู้ว่าเลือกได้เฉพาะวันอะไร
+    if (cancelDatePretty) {
+      cancelDatePretty.textContent = `เลือกได้เฉพาะวัน${thDay}เท่านั้น ✅`;
+    }
+
+    // ถ้าเคยเลือกวันที่ไว้แล้ว แต่ไม่ตรงวัน -> ล้างทันที
+    if (cancelDateEl.value) {
+      const d = picker.parseDate(cancelDateEl.value, "Y-m-d");
+      if (d && d.getDay() !== jsDow) {
+        picker.clear();
+        cancelDateEl.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+    }
+  }
+
   function pickSubject(opt) {
     state.selectedSubject = opt;
     setSelectedSubjectUI(opt);
+
     cancelDateBox.classList.remove("hidden");
+
+    // ✅ สำคัญ: ปรับ filter ปฏิทินยกคลาสตามวันวิชา
+    applyCancelDateFilterForSubject(opt);
 
     renderSubjects(state.groups, state, pickSubject);
     applySubjectSearch();
@@ -283,7 +337,14 @@ export function initHolidayForm({ userId, displayName, subjectsUrl, submitUrl, o
     setSelectedSubjectUI(null);
     cancelDateBox.classList.add("hidden");
 
-    // ✅ reset reminder: ไม่ใส่เวลาเริ่มต้น (ปล่อยว่าง)
+    // ล้าง helper
+    if (cancelDatePretty) cancelDatePretty.textContent = "";
+
+    // reset cancel picker disable
+    const picker = getCancelPicker();
+    if (picker) picker.set("disable", []);
+
+    // reset reminder: ไม่มีค่าเริ่มต้น
     remDate.value = "";
     remHour.value = "";
     remMinute.value = "";
@@ -314,9 +375,8 @@ export function initHolidayForm({ userId, displayName, subjectsUrl, submitUrl, o
     validate();
   });
 
-  // ✅ UX: กดแล้วพิมพ์ง่าย + auto jump
+  // ✅ UX: เวลา พิมพ์ง่าย + auto jump (เวอร์ชันแก้บัคแล้ว)
   function enhanceTimeInput(inputEl, { max, onFull }) {
-    // flag: เพิ่งโฟกัสมา ให้พิมพ์ตัวแรก “ทับ” ค่าเก่า
     let freshFocus = false;
 
     inputEl.addEventListener("focus", () => {
@@ -335,21 +395,20 @@ export function initHolidayForm({ userId, displayName, subjectsUrl, submitUrl, o
 
       if (isControl) return;
 
-      // กันการพิมพ์อื่นๆ ที่ไม่ใช่ตัวเลข
       if (!isDigit) {
         e.preventDefault();
         return;
       }
 
-      // ถ้าเต็ม 2 ตัวแล้ว และไม่ได้เลือกข้อความไว้ → กันไม่ให้พิมพ์เกิน
       const hasSelection = inputEl.selectionStart !== inputEl.selectionEnd;
+
+      // เต็ม 2 ตัวแล้วและไม่ได้เลือก -> ไม่ให้พิมพ์เพิ่ม
       if (!hasSelection && String(inputEl.value || "").length >= 2) {
         e.preventDefault();
         return;
       }
 
-      // ถ้าเพิ่งโฟกัสมา แล้วไม่ได้เลือกทั้งช่อง (บางเครื่อง select ไม่ทัน)
-      // ให้ล้างก่อนพิมพ์ตัวแรกเพื่อให้ทับง่าย
+      // โฟกัสใหม่ แล้วยังไม่เลือกข้อความ (บางเครื่อง select ไม่ทัน) -> ล้างก่อนตัวแรก
       if (freshFocus && !hasSelection) {
         inputEl.value = "";
       }
@@ -357,31 +416,25 @@ export function initHolidayForm({ userId, displayName, subjectsUrl, submitUrl, o
     });
 
     inputEl.addEventListener("input", () => {
-      // เอาเฉพาะตัวเลข + จำกัด 2 ตัว
       let v = String(inputEl.value || "").replace(/[^\d]/g, "");
       if (v.length > 2) v = v.slice(0, 2);
 
-      // clamp เมื่อพิมพ์ครบ 2 ตัว (หรือจะ clamp ทุกครั้งก็ได้ แต่แบบนี้ UX ดีกว่า)
       if (v.length === 2) {
         const n = clampInt(v, 0, max);
-        if (n === null) v = "";
-        else v = pad2(n);
+        v = n === null ? "" : pad2(n);
       }
 
       inputEl.value = v;
       validate();
 
-      // พิมพ์ครบ 2 ตัว → เด้งช่องถัดไป
       if (inputEl.value.length === 2 && typeof onFull === "function") {
         onFull();
       }
     });
 
     inputEl.addEventListener("blur", () => {
-      // blur แล้ว clamp แบบชัวร์ ถ้ามีค่า
       const v = String(inputEl.value || "").trim();
       if (!v) return;
-
       const n = clampInt(v, 0, max);
       inputEl.value = n === null ? "" : String(n);
       validate();
@@ -398,10 +451,7 @@ export function initHolidayForm({ userId, displayName, subjectsUrl, submitUrl, o
 
   enhanceTimeInput(remMinute, {
     max: 59,
-    onFull: () => {
-      // พิมพ์ครบ 2 ตัวแล้ว “ไม่ต้องทำอะไร” หรือจะ blur ก็ได้
-      // remMinute.blur();
-    }
+    onFull: () => {}
   });
 
   // date picker for reminder date
@@ -497,7 +547,7 @@ export function initHolidayForm({ userId, displayName, subjectsUrl, submitUrl, o
       openOverlay("successOverlay");
       setTimeout(() => {
         closeOverlay("successOverlay");
-        try { onDone?.(); } catch { }
+        try { onDone?.(); } catch {}
       }, 900);
 
       showMsg("บันทึกสำเร็จ ✅", "ok");
@@ -516,6 +566,7 @@ export function initHolidayForm({ userId, displayName, subjectsUrl, submitUrl, o
       showMsg("กำลังโหลดรายชื่อวิชา…");
       const groups = await fetchSubjectGroups({ subjectsUrl, userId });
       state.groups = Array.isArray(groups) ? groups : [];
+
       renderSubjects(state.groups, state, pickSubject);
       applySubjectSearch();
       showMsg("");
