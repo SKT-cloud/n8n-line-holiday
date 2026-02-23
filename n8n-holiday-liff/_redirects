@@ -1,0 +1,7 @@
+# Ensure static assets are served as files (avoid SPA rewrites returning index.html)
+# If you use an SPA fallback, keep these lines ABOVE it.
+ /js/*  /js/:splat  200
+ /css/* /css/:splat 200
+
+# SPA fallback (optional). If you don't need SPA routing, you can delete the next line.
+ /*     /index.html 200
