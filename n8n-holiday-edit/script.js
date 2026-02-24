@@ -655,8 +655,6 @@ function renderModalReminders(id){
     const inp = document.createElement("input");
     inp.className = "input";
     inp.type = "text";
-    initReminderPicker(inp);
-    setReminderPickerValue(inp, r.remind_at);
 
     const del = document.createElement("button");
     del.type = "button";
@@ -680,6 +678,14 @@ function renderModalReminders(id){
     row.appendChild(inp);
     row.appendChild(del);
     wrap.appendChild(row);
+
+    // ✅ IMPORTANT: init flatpickr หลัง input อยู่ใน DOM แล้ว (ไม่งั้น altInput จะหลุด/ไม่โชว์)
+    initReminderPicker(inp);
+    setReminderPickerValue(inp, r.remind_at);
+
+    // ✅ IMPORTANT: init flatpickr หลัง input อยู่ใน DOM แล้ว (ไม่งั้น altInput จะหลุด/ไม่โชว์)
+    initReminderPicker(inp);
+    setReminderPickerValue(inp, r.remind_at);
   });
 }
 
@@ -940,7 +946,6 @@ function bindUI(){
     const inp = document.createElement("input");
     inp.className = "input";
     inp.type = "text";
-    initReminderPicker(inp);
 
     // default: now + 1 hour (ให้ “เห็น” ว่าเพิ่มแล้ว)
     const now = new Date(Date.now() + 60*60*1000);
@@ -951,7 +956,7 @@ function bindUI(){
     const mm = String(Math.round(now.getMinutes()/5)*5).padStart(2,"0");
     const v = `${y}-${m}-${d} ${hh}:${mm}`;
     inp._fp?.setDate(v, true, "Y-m-d H:i");
-
+    
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "iconBtn danger";
@@ -975,11 +980,25 @@ function bindUI(){
     row.appendChild(btn);
     wrap.appendChild(row);
 
+    // ✅ init flatpickr หลังอยู่ใน DOM แล้ว
+    initReminderPicker(inp);
+
+    // default: now + 1 hour (ให้ “เห็น” ว่าเพิ่มแล้ว)
+    const now = new Date(Date.now() + 60*60*1000);
+    const y = now.getFullYear();
+    const m = String(now.getMonth()+1).padStart(2,"0");
+    const d = String(now.getDate()).padStart(2,"0");
+    const hh = String(now.getHours()).padStart(2,"0");
+    const mm = String(Math.round(now.getMinutes()/5)*5).padStart(2,"0");
+    const v = `${y}-${m}-${d} ${hh}:${mm}`;
+    inp._fp?.setDate(v, true, "Y-m-d H:i");
+
     sync();
     toast("เพิ่มเวลาแจ้งเตือนแล้ว ✅", "ok");
   });
 
   $("#mApply").addEventListener("click", applyModalToPending);
+  $("#mCancelEdit").addEventListener("click", () => { closeModal(); toast("ยกเลิกการแก้ไขรายการนี้แล้ว", "ok"); });
   $("#mDelete").addEventListener("click", () => {
     const ok = window.confirm("ยืนยันลบรายการนี้ใช่ไหม?");
     if (!ok) return;
