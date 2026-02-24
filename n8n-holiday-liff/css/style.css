@@ -243,3 +243,85 @@ input:focus, textarea:focus, select:focus{
   .timeInput{ width: 84px; }
   .remDel{ width: 100%; }
 }
+
+/* =========================
+   ✅ HTML class aliases (match index.html)
+   ทำให้ CSS ชุดเดิมทำงานกับ class ใน index.html
+   ========================= */
+
+.title { font-size:22px; font-weight:800; letter-spacing:-.02em; } /* เดิม .h1 */
+.subtitle { font-size:13px; color:var(--muted); }                 /* เดิม .sub */
+
+.pill{
+  padding:8px 10px;
+  border:1px solid var(--line);
+  background:rgba(255,255,255,.75);
+  border-radius:999px;
+  font-size:12px;
+  color:var(--muted);
+  box-shadow: var(--shadow2);
+} /* เดิม .chip */
+
+/* ฟอร์มใน index.html ใช้ row/grid2 */
+.row{ display:grid; gap:6px; } /* เดิม .field */
+.grid2{ display:grid; grid-template-columns:1fr 1fr; gap:12px; } /* เดิม .row2 */
+@media (max-width:680px){ .grid2{ grid-template-columns:1fr; } }
+
+/* segment ใน index.html: seg/segBtn/isActive */
+.seg{
+  display:flex;
+  background:rgba(15,23,42,.04);
+  padding:6px;
+  border-radius:14px;
+  border:1px solid rgba(15,23,42,.06);
+  gap:6px;
+}
+.segBtn{
+  flex:1;
+  border:0;
+  border-radius:12px;
+  padding:10px 12px;
+  font-weight:800;
+  background:transparent;
+  color:var(--muted);
+  cursor:pointer;
+}
+.segBtn.isActive{
+  background:var(--primary);
+  color:var(--primaryText);
+  box-shadow:0 10px 25px rgba(15,23,42,.18);
+}
+
+/* ปุ่มใน index.html: btnGhost/btnPrimary/btnDanger */
+.btnGhost{ 
+  border:1px solid rgba(15,23,42,.12);
+  background:transparent;
+  color:var(--text);
+  border-radius:12px;
+  padding:9px 12px;
+  font-weight:800;
+  cursor:pointer;
+}
+.btnPrimary{
+  background:var(--primary);
+  color:var(--primaryText);
+  border:0;
+  border-radius:12px;
+  padding:9px 12px;
+  font-weight:900;
+  cursor:pointer;
+}
+.btnDanger{
+  background:rgba(239,68,68,.10);
+  border:1px solid rgba(239,68,68,.25);
+  color:#991b1b;
+  border-radius:12px;
+  padding:9px 12px;
+  font-weight:900;
+  cursor:pointer;
+}
+
+/* Subjects section class names ใน index.html */
+.dayHead{ font-weight:800; font-size:13px; color:var(--muted); margin:10px 0 8px; } /* เดิม dayTitle */
+.subGrid{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }                 /* เดิม subjectGrid */
+@media (max-width:680px){ .subGrid{ grid-template-columns:1fr; } }
