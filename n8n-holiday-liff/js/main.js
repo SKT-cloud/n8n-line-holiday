@@ -1,4 +1,3 @@
-import { CONFIG } from "./config.js";
 import { initLiff } from "./auth.js";
 import { fetchSubjects, createHoliday } from "./api.js";
 import { bindForm } from "./form.js";
@@ -34,7 +33,8 @@ function daySort(d){
 }
 
 function renderSubjects(items){
-  const list = $("#subjectList");
+  // ✅ FIX: index.html ใช้ id="subjects"
+  const list = $("#subjects");
   if (!list) return;
 
   list.innerHTML = "";
@@ -106,7 +106,7 @@ async function run() {
     setStatus("กำลังเปิดฟอร์ม...");
 
     const { idToken, profile } = await initLiff();
-    if (!idToken) return; // login redirected
+    if (!idToken) return;
 
     const userPill = $("#userPill");
     if (userPill) userPill.textContent = profile?.displayName || "คุณ";
@@ -121,18 +121,21 @@ async function run() {
         relogin();
         return;
       }
-      throw err;
+      console.error(err);
+      toast(err?.message || String(err), "err");
+      items = [];
     }
 
     const subjectsStatus = $("#subjectsStatus");
-    if (subjectsStatus) subjectsStatus.textContent = items.length ? `มี ${items.length} รายวิชา` : "ยังไม่มีข้อมูลวิชาในระบบ 😅";
-    renderSubjects(items);
+    if (subjectsStatus) {
+      subjectsStatus.textContent = items.length ? `มี ${items.length} รายวิชา` : "ยังไม่มีข้อมูลวิชาในระบบ 😅";
+    }
 
+    renderSubjects(items);
     setStatus("");
 
     bindForm({
       onSubmit: async (payload) => {
-        // confirm ก่อนบันทึก
         const ok = window.confirm("ยืนยันการบันทึกใช่ไหม?\n\nกด “ตกลง” เพื่อบันทึก หรือ “ยกเลิก” เพื่อกลับไปแก้ไข");
         if (!ok) return;
 
@@ -150,7 +153,6 @@ async function run() {
         toast("บันทึกสำเร็จ ✅", "ok");
         setStatus("");
 
-        // close LIFF after save
         try { window.liff.closeWindow(); } catch(_) {}
       },
       onTokenExpired: relogin,

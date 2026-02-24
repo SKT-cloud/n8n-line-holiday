@@ -7,10 +7,7 @@
 
   <link rel="stylesheet" href="./css/style.css" />
 
-  <!-- LIFF SDK (ต้องมาก่อน main.js) -->
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
-
-  <!-- App -->
   <script type="module" src="./js/main.js"></script>
 </head>
 
@@ -33,7 +30,7 @@
           <button type="button" class="segBtn isActive" id="typeHoliday" role="tab" aria-selected="true">หยุดทั้งวัน</button>
           <button type="button" class="segBtn" id="typeCancel" role="tab" aria-selected="false">ยกคลาส</button>
         </div>
-        <div class="help" id="cancelHint">ถ้าเลือก “ยกคลาส” จะต้องเลือกวิชาจากตารางด้านล่าง</div>
+        <div class="help" id="cancelHint">โหมด “ยกคลาส” ต้องเลือกวิชาก่อน แล้วค่อยเลือกวันที่จากปฏิทินด้านล่าง</div>
       </div>
 
       <div class="row">
@@ -43,56 +40,85 @@
 
       <div class="row">
         <div class="label">หมายเหตุ (ไม่จำเป็น)</div>
-        <textarea class="input" id="note" rows="3" placeholder="เช่น สถานที่ / เหตุผล / รายละเอียดเพิ่มเติม"></textarea>
+        <textarea class="input" id="note" placeholder="เช่น สถานที่ / เหตุผล / รายละเอียดเพิ่มเติม"></textarea>
       </div>
 
-      <div class="row">
-        <div class="label">ช่วงวันที่หยุด</div>
-        <div class="grid2">
-          <div>
-            <div class="mini">วันเริ่ม</div>
+      <div class="row" id="dateRow">
+        <div class="label" id="dateRangeLabel">ช่วงวันที่หยุด</div>
+
+        <div class="grid2" id="dateGrid">
+          <div id="startDateWrap">
+            <div class="mini" id="startLabel">วันเริ่ม</div>
             <input class="input" type="date" id="startDate" />
-            <div class="preview" id="startPreview">-</div>
           </div>
-          <div>
-            <div class="mini">วันสุดท้าย (เว้นได้)</div>
+
+          <div id="endDateWrap">
+            <div class="mini" id="endLabel">วันสุดท้าย (เว้นได้)</div>
             <input class="input" type="date" id="endDate" />
-            <div class="preview" id="endPreview">-</div>
           </div>
         </div>
-        <div class="help">ถ้าหยุดวันเดียว ปล่อย “วันสุดท้าย” ว่างได้ ✅</div>
+
+        <input type="hidden" id="cancelDateValue" value="" />
+
+        <div class="help" id="dateRangeHelp">ถ้าหยุดวันเดียว ปล่อย “วันสุดท้าย” ว่างได้ ✅</div>
       </div>
 
-      <div class="row">
-        <div class="rowHead">
-          <div>
-            <div class="label">แจ้งเตือน</div>
-            <div class="help">ถ้าไม่เพิ่มเวลาแจ้งเตือน = ไม่แจ้งเตือน</div>
+      <div id="formTailHome"></div>
+
+      <div id="formTail">
+        <div class="row">
+          <div class="rowHead">
+            <div>
+              <div class="label">แจ้งเตือน</div>
+              <div class="help">ถ้าไม่เพิ่มเวลาแจ้งเตือน = ไม่แจ้งเตือน</div>
+            </div>
+            <button type="button" class="btnGhost" id="addReminder">＋ เพิ่มเวลา</button>
           </div>
-          <button type="button" class="btnGhost" id="addReminder">＋ เพิ่มเวลา</button>
+          <div id="reminders"></div>
         </div>
-        <div id="reminders"></div>
-      </div>
 
-      <div class="actions">
-        <button type="button" class="btnGhost" id="resetBtn">ล้างฟอร์ม</button>
-        <button type="submit" class="btnPrimary" id="saveBtn">บันทึก</button>
-      </div>
+        <div class="actions">
+          <!-- ✅ ใส่ form="holidayForm" เผื่อก้อนนี้ถูกย้ายออกนอกฟอร์ม -->
+          <button type="button" class="btnGhost" id="resetBtn" form="holidayForm">ล้างฟอร์ม</button>
+          <button type="submit" class="btnPrimary" id="saveBtn" form="holidayForm">บันทึก</button>
+        </div>
 
-      <div class="status" id="status"></div>
+        <div class="status" id="status"></div>
+      </div>
     </form>
 
     <section class="card" id="cancelBox" hidden>
       <div class="rowHead">
         <div>
           <div class="label">ตารางวิชา</div>
-          <div class="help" id="subjectsStatus">กำลังโหลดรายวิชา...</div>
-        </div>
-        <div class="picked">
-          เลือกแล้ว: <span id="selectedSubject">-</span>
+          <div class="help">เลือกวิชาที่ต้องการ “ยกคลาส”</div>
+          <div class="help" id="subjectsStatus"></div>
         </div>
       </div>
-      <div id="subjectList"></div>
+
+      <div id="subjects"></div>
+
+      <div class="row" id="cancelCalendarWrap" style="display:none; margin-top:16px;">
+        <div class="label">วันที่หยุด</div>
+        <div class="help">วันอื่นจะเป็นสีเทาและกดไม่ได้ (เลือกได้เฉพาะวันเรียนของวิชาที่เลือก)</div>
+
+        <div class="cal">
+          <div class="calTop">
+            <button type="button" class="calNav" id="calPrev" aria-label="เดือนก่อนหน้า">‹</button>
+            <div class="calTitle" id="calTitle">—</div>
+            <button type="button" class="calNav" id="calNext" aria-label="เดือนถัดไป">›</button>
+          </div>
+
+          <div class="calDow">
+            <div>อา</div><div>จ</div><div>อ</div><div>พ</div><div>พฤ</div><div>ศ</div><div>ส</div>
+          </div>
+
+          <div class="calGrid" id="calGrid"></div>
+          <div class="calHint" id="calHint"></div>
+        </div>
+      </div>
+
+      <div id="cancelTailAnchor"></div>
     </section>
 
     <div class="footer">StudyBot • LIFF</div>
