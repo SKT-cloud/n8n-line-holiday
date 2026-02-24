@@ -1,6 +1,6 @@
 // worker.js — Cloudflare Worker (D1) for Holiday + Reminders (LIFF secure + internal API_KEY)
 // ✅ Mode A: ให้ LIFF ดึงรายชื่อวิชา + บันทึกวันหยุด/ยกคลาส ผ่าน Worker โดยตรง
-// - LIFF secure endpoints (ใช้ LINE idToken ผ่าน /oauth2/v2.1/verify):
+// - LIFF secure endpoints (ใช้ LINE token):
 //    GET  /liff/subjects
 //    POST /liff/holidays/create
 //    GET  /liff/holidays/list?from=...&to=...
@@ -54,7 +54,6 @@ function normalizeRangeIso(from, to) {
   return { from: f, to: t };
 }
 
-
 /* =========================
    ✅ CORS (สำหรับ LIFF)
    ========================= */
@@ -77,23 +76,41 @@ function withCors(request, res) {
 }
 
 /* =========================
-   ✅ LIFF idToken verify
+   ✅ LIFF token -> userId (FIX)
+   - try access token via /v2/profile first
+   - fallback to idToken verify via /oauth2/v2.1/verify
    ========================= */
 async function getUserIdFromLiffToken(request, env) {
   const auth = request.headers.get("Authorization") || "";
   const m = auth.match(/^Bearer\s+(.+)$/i);
   if (!m) throw new Error("missing bearer token");
 
-  const id_token = m[1].trim();
-  if (!id_token) throw new Error("missing id_token");
+  const token = m[1].trim();
+  if (!token) throw new Error("missing token");
 
+  // ✅ 1) access token via /v2/profile
+  try {
+    const res = await fetch("https://api.line.me/v2/profile", {
+      method: "GET",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data && data.userId) {
+      return data.userId;
+    }
+  } catch (_) {
+    // ignore -> fallback
+  }
+
+  // ✅ 2) fallback: idToken verify
   const client_id = env.LINE_LOGIN_CHANNEL_ID;
   if (!client_id) throw new Error("missing LINE_LOGIN_CHANNEL_ID");
 
   const res = await fetch("https://api.line.me/oauth2/v2.1/verify", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ id_token, client_id }),
+    body: new URLSearchParams({ id_token: token, client_id }),
   });
 
   const data = await res.json().catch(() => ({}));
@@ -109,30 +126,18 @@ async function getUserIdFromLiffToken(request, env) {
 /* =========================
    ✅ Title/All-day normalization helpers
    ========================= */
-
-/** normalize all_day based on type (your intended logic) */
 function normalizeAllDayByType(type, all_day) {
-  // concept:
-  // - holiday: all_day = 1 (หยุดทั้งวัน)
-  // - cancel : all_day = 0 (ยกเฉพาะวิชา ไม่ใช่ทั้งวัน)
   if (type === "holiday") return 1;
   if (type === "cancel") return 0;
   return Number(all_day) ? 1 : 0;
 }
 
-/** sanitize title string */
 function cleanTitle(v) {
   if (v === null || v === undefined) return null;
   const t = String(v).trim();
   return t ? t : null;
 }
 
-/**
- * Ensure title for cancel:
- * - if title exists => keep it
- * - if cancel and title missing but subject_id exists => fetch subject_code + subject_name
- * - else fallback "ยกคลาส"/null
- */
 async function ensureTitle(env, userId, type, subject_id, title) {
   const cleaned = cleanTitle(title);
   if (cleaned) return cleaned;
@@ -154,27 +159,18 @@ async function ensureTitle(env, userId, type, subject_id, title) {
     return "ยกคลาส";
   }
 
-  // holiday: allow null title (or you can change to "วันหยุด" if you want)
   return cleaned;
 }
 
-/**
- * Compute remind_at from start_at date:
- * - start_at format: YYYY-MM-DDTHH:mm:ss+07:00
- * - days_before: integer (0,1,2,...)
- * - time: "09:00" / "17:00"
- * Output: YYYY-MM-DDTHH:mm:00+07:00
- */
 function computeRemindAtFromStart(start_at, days_before, timeHHMM) {
   if (!isIsoLike(start_at)) throw new Error("invalid start_at");
   if (!isHHMM(timeHHMM)) throw new Error("invalid time");
   const days = toInt(days_before, 0);
 
-  const datePart = String(start_at).slice(0, 10); // YYYY-MM-DD
+  const datePart = String(start_at).slice(0, 10);
   const [y, m, d] = datePart.split("-").map((x) => Number(x));
   if (!y || !m || !d) throw new Error("invalid start_at date");
 
-  // Do date math in UTC to avoid runtime timezone issues, but output in +07:00
   const base = new Date(Date.UTC(y, m - 1, d, 0, 0, 0));
   base.setUTCDate(base.getUTCDate() - days);
 
@@ -185,12 +181,6 @@ function computeRemindAtFromStart(start_at, days_before, timeHHMM) {
   return `${yy}-${mm}-${dd}T${timeHHMM}:00${TZ}`;
 }
 
-/**
- * Accept reminder item in 3 forms:
- * 1) "2026-02-18T09:00:00+07:00"
- * 2) { remind_at: "..." }
- * 3) { days_before: 1, time: "09:00" }
- */
 function resolveRemindAt(item, start_at) {
   if (typeof item === "string") {
     if (!isIsoLike(item)) throw new Error("invalid remind_at");
@@ -207,12 +197,10 @@ function resolveRemindAt(item, start_at) {
   throw new Error("invalid reminder item");
 }
 
-/** Compare ISO-like strings lexicographically for +07:00 same format */
 function isoLessOrEqual(a, b) {
   return String(a) <= String(b);
 }
 
-/** current time in +07:00 string style for comparison */
 function nowBangkokIsoLike() {
   const now = new Date();
   const ms = now.getTime() + 7 * 60 * 60 * 1000;
@@ -231,7 +219,6 @@ function nowBangkokIsoLike() {
 /* =========================
    ✅ LINE Push + Cron Sender
    ========================= */
-
 async function linePush(env, to, messages) {
   const token = env.LINE_CHANNEL_ACCESS_TOKEN;
   if (!token) throw new Error("missing LINE_CHANNEL_ACCESS_TOKEN");
@@ -294,8 +281,6 @@ function buildReminderFlex(row, env) {
           : `${ymdToThai(startYmd)}`)
       : "-";
 
-  const liffUrl = env.LIFF_HOLIDAY_URL ? String(env.LIFF_HOLIDAY_URL) : null;
-
   return {
     type: "flex",
     altText: `⏰ แจ้งเตือน: ${title} (${dateText} • ${remindText})`,
@@ -322,39 +307,19 @@ function buildReminderFlex(row, env) {
             layout: "vertical",
             spacing: "sm",
             contents: [
-              {
-                type: "box",
-                layout: "baseline",
-                contents: [                
-                  { type: "text", text: `${typeText}: ${title}`, wrap: true, flex: 1, size: "md", weight: "bold" },
-                ],
-              },
-              {
-                type: "box",
-                layout: "baseline",
-                contents: [
-                  { type: "text", text: "📅", flex: 0 },
-                  { type: "text", text: `วันที่: ${dateText}`, wrap: true, flex: 1, size: "sm" },
-                ],
-              },
-              {
-                type: "box",
-                layout: "baseline",
-                contents: [
-                  { type: "text", text: "🕒", flex: 0 },
-                  { type: "text", text: `เตือนเวลา: ${remindText}`, wrap: true, flex: 1, size: "sm" },
-                ],
-              },
+              { type: "text", text: `${typeText}: ${title}`, wrap: true, size: "md", weight: "bold" },
+              { type: "text", text: `📅 วันที่: ${dateText}`, wrap: true, size: "sm" },
+              { type: "text", text: `🕒 เตือนเวลา: ${remindText}`, wrap: true, size: "sm" },
             ],
           },
         ],
-      },      
+      },
     },
   };
 }
 
 /**
- * ✅ Flex ยืนยันการบันทึก (ตอน create สำเร็จ) — ปรับให้สวยขึ้น
+ * ✅ Flex ยืนยัน “สร้าง” สำเร็จ
  */
 function buildSavedFlex({ type, title, start_at, end_at }) {
   const startYmd = (start_at || "").slice(0, 10);
@@ -393,6 +358,63 @@ function buildSavedFlex({ type, title, start_at, end_at }) {
               { type: "text", text: typeText, weight: "bold", size: "md" },
               { type: "text", text: t, wrap: true, size: "md", weight: "bold" },
               { type: "text", text: `วันที่: ${dateText}`, wrap: true, size: "sm", color: "#555555" },
+            ],
+          },
+        ],
+      },
+      footer: {
+        type: "box",
+        layout: "vertical",
+        spacing: "sm",
+        contents: [
+          { type: "button", style: "primary", action: { type: "message", label: "👀 ดูวันหยุด", text: "ดูวันหยุด" } },
+        ],
+      },
+    },
+  };
+}
+
+/**
+ * ✅ NEW: Flex ยืนยัน “แก้ไข” สำเร็จ (สดใส + ปุ่มดูวันหยุด)
+ */
+function buildUpdatedFlex({ type, title, start_at, end_at }) {
+  const startYmd = (start_at || "").slice(0, 10);
+  const endYmd = (end_at || "").slice(0, 10);
+
+  const dateText =
+    startYmd
+      ? (endYmd && endYmd !== startYmd
+          ? `${ymdToThai(startYmd)} – ${ymdToThai(endYmd)}`
+          : `${ymdToThai(startYmd)}`)
+      : "-";
+
+  const typeText = type === "cancel" ? "🚫 ยกคลาส" : "🏝️ วันหยุด";
+  const t = title && String(title).trim()
+    ? String(title).trim()
+    : (type === "cancel" ? "ยกคลาส" : "วันหยุด");
+
+  return {
+    type: "flex",
+    altText: `✨ แก้ไขเรียบร้อยแล้ว: ${typeText} (${dateText})`,
+    contents: {
+      type: "bubble",
+      size: "mega",
+      body: {
+        type: "box",
+        layout: "vertical",
+        spacing: "md",
+        contents: [
+          { type: "text", text: "แก้ไขเรียบร้อยแล้วค่ะ ✨💖", weight: "bold", size: "lg", wrap: true },
+          { type: "text", text: "ต้องการดูวันหยุดอีกครั้ง กดปุ่มด้านล่างได้เลยน้า 😊", size: "sm", wrap: true, color: "#555555" },
+          { type: "separator" },
+          {
+            type: "box",
+            layout: "vertical",
+            spacing: "sm",
+            contents: [
+              { type: "text", text: typeText, weight: "bold", size: "md" },
+              { type: "text", text: t, wrap: true, size: "md", weight: "bold" },
+              { type: "text", text: `📅 วันที่: ${dateText}`, wrap: true, size: "sm", color: "#555555" },
             ],
           },
         ],
@@ -478,12 +500,10 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
-    // ✅ CORS preflight
     if (request.method === "OPTIONS") {
       return new Response(null, { status: 204, headers: corsHeaders(request) });
     }
 
-    // Health check
     if (url.pathname === "/health") {
       return withCors(request, Response.json({ ok: true }));
     }
@@ -492,7 +512,6 @@ export default {
        ✅ LIFF secure endpoints
        ========================= */
 
-    // ✅ GET /liff/subjects  (ดึงวิชาของ user จาก idToken)
     if (url.pathname === "/liff/subjects" && request.method === "GET") {
       try {
         const userId = await getUserIdFromLiffToken(request, env);
@@ -533,7 +552,6 @@ export default {
       }
     }
 
-    // ✅ POST /liff/holidays/create
     if (url.pathname === "/liff/holidays/create" && request.method === "POST") {
       try {
         const userId = await getUserIdFromLiffToken(request, env);
@@ -541,8 +559,8 @@ export default {
         if (!body) return withCors(request, jsonError("invalid json"));
 
         const {
-          type,          // 'holiday' | 'cancel'
-          subject_id,    // nullable
+          type,
+          subject_id,
           all_day = 1,
           start_at,
           end_at,
@@ -554,7 +572,6 @@ export default {
         if (!["holiday", "cancel"].includes(type)) return withCors(request, jsonError("invalid type"));
         if (!isIsoLike(start_at) || !isIsoLike(end_at)) return withCors(request, jsonError("missing/invalid start_at or end_at"));
 
-        // ✅ normalize all_day + ensure title for cancel
         const normalizedAllDay = normalizeAllDayByType(type, all_day);
         const finalTitle = await ensureTitle(env, userId, type, subject_id ?? null, title);
 
@@ -574,7 +591,6 @@ export default {
 
         const holidayId = ins.meta?.last_row_id;
 
-        // reminders (unique + skip past)
         let reminders_created = 0;
         let reminders_skipped = 0;
 
@@ -603,7 +619,6 @@ export default {
           }
         }
 
-        // (optional) push confirm
         if (env.PUSH_ON_SAVE === "1") {
           try {
             await linePush(env, userId, [buildSavedFlex({ type, title: finalTitle, start_at, end_at })]);
@@ -625,7 +640,6 @@ export default {
       }
     }
 
-    // GET /liff/holidays/list?from=...&to=...
     if (url.pathname === "/liff/holidays/list" && request.method === "GET") {
       try {
         const userId = await getUserIdFromLiffToken(request, env);
@@ -652,7 +666,6 @@ export default {
       }
     }
 
-    // ✅ GET /liff/holidays/reminders/list?holiday_id=...
     if (url.pathname === "/liff/holidays/reminders/list" && request.method === "GET") {
       try {
         const userId = await getUserIdFromLiffToken(request, env);
@@ -680,8 +693,7 @@ export default {
       }
     }
 
-    // POST /liff/holidays/update
-    // body: { id, start_at?, end_at?, title?, note?, subject_id? }
+    // ✅ UPDATE: แก้ไขแล้ว push เข้าไลน์ด้วย
     if (url.pathname === "/liff/holidays/update" && request.method === "POST") {
       try {
         const userId = await getUserIdFromLiffToken(request, env);
@@ -702,19 +714,14 @@ export default {
         const nextStart = body.start_at !== undefined ? body.start_at : cur.start_at;
         const nextEnd   = body.end_at   !== undefined ? body.end_at   : cur.end_at;
         const nextNote  = body.note     !== undefined ? body.note     : cur.note;
-
-        // allow subject_id update (optional)
         const nextSubjectId = body.subject_id !== undefined ? body.subject_id : cur.subject_id;
 
         if (!isIsoLike(nextStart) || !isIsoLike(nextEnd)) {
           return withCors(request, jsonError("invalid start_at/end_at"));
         }
 
-        // title fallback (especially cancel)
         const wantedTitle = body.title !== undefined ? body.title : cur.title;
         const finalTitle = await ensureTitle(env, userId, cur.type, nextSubjectId ?? null, wantedTitle);
-
-        // normalize all_day from type (ignore incoming)
         const normalizedAllDay = normalizeAllDayByType(cur.type, cur.all_day);
 
         const upd = await env.DB.prepare(`
@@ -742,13 +749,24 @@ export default {
         const changes = upd.meta?.changes ?? 0;
         if (changes === 0) return withCors(request, jsonError("not found", 404));
 
+        // ✅ NEW: push “แก้ไขเรียบร้อยแล้ว”
+        if (env.PUSH_ON_SAVE === "1") {
+          try {
+            await linePush(env, userId, [
+              buildUpdatedFlex({ type: cur.type, title: finalTitle, start_at: nextStart, end_at: nextEnd })
+            ]);
+          } catch (e) {
+            console.error("push update confirm failed", e);
+          }
+        }
+
         return withCors(request, Response.json({ ok: true, title: finalTitle, all_day: normalizedAllDay }));
       } catch (e) {
         return withCors(request, jsonError(String(e.message || e), 401));
       }
     }
 
-    // ✅ POST /liff/holidays/reminders/set
+    // ✅ SET REMINDERS: เซ็ตเสร็จแล้ว push ได้ด้วย (กันเคสแก้เฉพาะแจ้งเตือน)
     if (url.pathname === "/liff/holidays/reminders/set" && request.method === "POST") {
       try {
         const userId = await getUserIdFromLiffToken(request, env);
@@ -761,7 +779,7 @@ export default {
         if (!holidayId) return withCors(request, jsonError("missing holiday_id"));
 
         const h = await env.DB.prepare(`
-          SELECT id, start_at
+          SELECT id, type, title, start_at, end_at
           FROM holidays
           WHERE id = ? AND user_id = ?
         `).bind(holidayId, userId).first();
@@ -802,6 +820,17 @@ export default {
 
         const rs = await env.DB.batch(stmts);
 
+        // ✅ NEW: push แจ้งเตือนว่าบันทึกการแก้ไข (รวมถึงแจ้งเตือน) แล้ว
+        if (env.PUSH_ON_SAVE === "1") {
+          try {
+            await linePush(env, userId, [
+              buildUpdatedFlex({ type: h.type, title: h.title, start_at: h.start_at, end_at: h.end_at })
+            ]);
+          } catch (e) {
+            console.error("push reminders confirm failed", e);
+          }
+        }
+
         return withCors(request, Response.json({
           ok: true,
           holiday_id: holidayId,
@@ -814,7 +843,6 @@ export default {
       }
     }
 
-    // POST /liff/holidays/delete
     if (url.pathname === "/liff/holidays/delete" && request.method === "POST") {
       try {
         const userId = await getUserIdFromLiffToken(request, env);
@@ -839,7 +867,6 @@ export default {
       }
     }
 
-    // POST /liff/holidays/batch
     if (url.pathname === "/liff/holidays/batch" && request.method === "POST") {
       try {
         const userId = await getUserIdFromLiffToken(request, env);
@@ -912,7 +939,6 @@ export default {
       return withCors(request, jsonError("unauthorized", 401));
     }
 
-    // ✅ GET /subjects?user_id=...
     if (url.pathname === "/subjects" && request.method === "GET") {
       const user_id = url.searchParams.get("user_id");
       if (!user_id) return withCors(request, jsonError("missing user_id"));
@@ -937,7 +963,6 @@ export default {
       return withCors(request, Response.json({ ok: true, items: results || [] }));
     }
 
-    // ✅ POST /holidays (add) + reminders
     if (url.pathname === "/holidays" && request.method === "POST") {
       const body = await request.json().catch(() => null);
       if (!body) return withCors(request, jsonError("invalid json"));
@@ -1015,7 +1040,6 @@ export default {
       }));
     }
 
-    // ✅ POST /holidays/reminders/add
     if (url.pathname === "/holidays/reminders/add" && request.method === "POST") {
       const body = await request.json().catch(() => null);
       if (!body) return withCors(request, jsonError("invalid json"));
@@ -1062,7 +1086,6 @@ export default {
       return withCors(request, Response.json({ ok: true, holiday_id, reminders_created, reminders_skipped }));
     }
 
-    // ✅ GET /holidays/list?user_id=...&from=...&to=...
     if (url.pathname === "/holidays/list" && request.method === "GET") {
       const user_id = url.searchParams.get("user_id");
       const rawFrom = url.searchParams.get("from");
@@ -1084,7 +1107,6 @@ export default {
       return withCors(request, Response.json({ ok: true, items: results || [] }));
     }
 
-    // ✅ POST /holidays/delete  body: { user_id, id }
     if (url.pathname === "/holidays/delete" && request.method === "POST") {
       const body = await request.json().catch(() => null);
       if (!body) return withCors(request, jsonError("invalid json"));
@@ -1107,7 +1129,6 @@ export default {
     return withCors(request, jsonError("not found", 404));
   },
 
-  // ✅ Cron Trigger จะเรียกตรงนี้
   async scheduled(event, env, ctx) {
     ctx.waitUntil(processDueReminders(env));
   },

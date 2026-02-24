@@ -103,7 +103,6 @@ function toIsoBangkokAllDayEnd(ymd) {
    State
    ========================= */
 const state = {
-  // ✅ ใช้ access token เป็นหลัก (ทนกว่า idToken ที่หมดอายุง่ายใน flow คุณ)
   token: "",
   idToken: "",
   profile: null,
@@ -126,7 +125,6 @@ async function apiFetch(path, opts = {}) {
   const url = new URL(path, base);
 
   const headers = new Headers(opts.headers || {});
-  // ✅ ส่ง token (access token เป็นหลัก)
   if (state.token) headers.set("Authorization", `Bearer ${state.token}`);
   if (!headers.has("Content-Type") && opts.body) headers.set("Content-Type", "application/json");
 
@@ -136,7 +134,6 @@ async function apiFetch(path, opts = {}) {
   if (!res.ok) {
     const msg = data?.error || data?.message || `HTTP ${res.status}`;
 
-    // ✅ ถ้า token ใช้ไม่ได้ ให้ login ใหม่เลย (แก้กรณี access token หมดอายุ)
     if (res.status === 401) {
       console.warn("401 from worker:", msg);
       toast(`เซสชันหมดอายุ กำลังพา login ใหม่...`, "err");
@@ -448,7 +445,7 @@ function renderList() {
 }
 
 /* =========================
-   Modal Edit (เหมือนเดิม)
+   Modal Edit
    ========================= */
 function openModal(row) {
   state.editing = row;
@@ -618,6 +615,39 @@ async function saveModal() {
 }
 
 /* =========================
+   ✅ NEW: Top toolbar actions
+   ========================= */
+function isModalOpen() {
+  const m = $("#modal");
+  return m && !m.hidden;
+}
+
+/* ✅ “ทิ้งการแก้ไข” = ปิดโมดัล + reload list ให้กลับตาม DB */
+async function discardEditsAll() {
+  try {
+    if (isModalOpen()) closeModal();
+    toast("ทิ้งการแก้ไขแล้ว ↩️", "ok");
+    await loadList();
+  } catch (e) {
+    toast(`ทำรายการไม่สำเร็จ: ${e.message}`, "err");
+  }
+}
+
+/* ✅ “บันทึกทั้งหมด” = ถ้าโมดัลเปิดอยู่ให้ saveModal เดิมเลย / ถ้าไม่เปิดก็แค่รีโหลด */
+async function saveAll() {
+  try {
+    if (isModalOpen()) {
+      await saveModal(); // ใช้ฟังก์ชันเดิม ไม่รื้อ
+      return;
+    }
+    toast("บันทึกครบแล้ว ✅", "ok");
+    await loadList();
+  } catch (e) {
+    toast(`บันทึกไม่สำเร็จ: ${e.message}`, "err");
+  }
+}
+
+/* =========================
    Load & Init
    ========================= */
 async function loadList() {
@@ -657,7 +687,6 @@ async function init() {
       return;
     }
 
-    // ✅ ใช้ access token เป็นหลัก
     state.token = liff.getAccessToken() || "";
     state.idToken = liff.getIDToken() || "";
 
@@ -679,8 +708,10 @@ async function init() {
     $("#calNext").onclick = () => { state.calMonth = addMonths(state.calMonth, +1); renderCalendar(); };
 
     $("#reloadBtn").onclick = () => loadList();
-    $("#editAllBtn").onclick = () => toast("โหมดนี้ยังไม่เปิดใช้งาน 😉", "ok");
-    $("#saveAllBtn").onclick = () => toast("โหมดนี้ยังไม่เปิดใช้งาน 😉", "ok");
+
+    // ✅ เปลี่ยนจาก toast โหมดไม่เปิดใช้งาน -> ให้ทำงานจริง
+    $("#editAllBtn").onclick = discardEditsAll;
+    $("#saveAllBtn").onclick = saveAll;
 
     await loadList();
   } catch (e) {
