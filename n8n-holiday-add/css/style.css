@@ -231,6 +231,106 @@ textarea{ resize: vertical; min-height: 110px; }
 .toast.ok{ border-color: rgba(34,197,94,.25); }
 .toast.err{ border-color: rgba(239,68,68,.25); }
 
+/* =========================
+   ✅ Center Overlay (Loading / Success / Error)
+   ========================= */
+
+.overlay{
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(15,23,42,.35);
+  backdrop-filter: blur(6px);
+  z-index: 10000;
+}
+
+.overlay[hidden]{ display:none !important; }
+
+.overlayCard{
+  width: min(520px, calc(100vw - 24px));
+  border-radius: 22px;
+  background: rgba(255,255,255,.94);
+  border: 1px solid rgba(15,23,42,.10);
+  box-shadow: var(--shadow);
+  padding: 18px 18px 16px;
+  text-align: center;
+  animation: popIn .18s ease;
+}
+
+@keyframes popIn{
+  from{ transform: translateY(6px) scale(.98); opacity: .0; }
+  to{ transform: translateY(0) scale(1); opacity: 1; }
+}
+
+.overlayIcon{
+  width: 56px;
+  height: 56px;
+  margin: 4px auto 10px;
+  border-radius: 18px;
+  display: grid;
+  place-items: center;
+}
+
+/* Loading: spinner */
+.overlayIcon.loading{
+  background: rgba(15,23,42,.04);
+}
+.overlayIcon.loading::before{
+  content: "";
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  border: 3px solid rgba(15,23,42,.18);
+  border-top-color: rgba(15,23,42,.65);
+  animation: spin .8s linear infinite;
+}
+@keyframes spin{ to{ transform: rotate(360deg); } }
+
+/* Success: check */
+.overlayIcon.ok{
+  background: rgba(34,197,94,.08);
+}
+.overlayIcon.ok::before{
+  content: "✓";
+  font-weight: 950;
+  font-size: 28px;
+  color: #16a34a;
+  animation: bounceIn .22s ease;
+}
+
+/* Error: cross */
+.overlayIcon.err{
+  background: rgba(239,68,68,.08);
+}
+.overlayIcon.err::before{
+  content: "✕";
+  font-weight: 950;
+  font-size: 26px;
+  color: #b91c1c;
+  animation: bounceIn .22s ease;
+}
+
+@keyframes bounceIn{
+  0%{ transform: scale(.85); opacity: .0; }
+  100%{ transform: scale(1); opacity: 1; }
+}
+
+.overlayTitle{
+  font-weight: 950;
+  font-size: 16px;
+  color: rgba(15,23,42,.88);
+  letter-spacing: -.01em;
+}
+.overlayDesc{
+  margin-top: 6px;
+  font-size: 13px;
+  color: rgba(15,23,42,.55);
+  font-weight: 750;
+  line-height: 1.35;
+}
+
 #cancelBox[hidden]{display:none !important;}
 
 /* =========================

@@ -2,6 +2,10 @@ export const CONFIG = {
   // ✅ Worker base
   WORKER_BASE: "https://study-holiday-api.suwijuck-kat.workers.dev",
 
+  // ✅ n8n webhook (ให้ LIFF ยิงเข้า n8n แล้วให้ n8n เป็นคนบันทึก + ส่ง Flex)
+  // ใส่ URL จริงของคุณตรงนี้
+  N8N_WEBHOOK_SAVE_HOLIDAY: "",
+
   // ✅ LIFF IDs (ของคุณ)
   LIFF_ID_ADD: "2009146879-xoNc2sVq",
   LIFF_ID_EDIT: "2009146879-3eBGpF5j",

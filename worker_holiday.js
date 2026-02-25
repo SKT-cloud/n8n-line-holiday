@@ -282,181 +282,46 @@ function isoToThaiDateTime(iso) {
   const hhmm = iso.slice(11, 16);
   return `${ymdToThai(ymd)} ${hhmm} น.`;
 }
-
 /**
- * ✅ Flex แจ้งเตือน (cron)
+ * ✅ Reminder message (text) — no Flex
  */
-function buildReminderFlex(row, env) {
-  const remindText = isoToThaiDateTime(row.remind_at);
+function buildReminderText(row) {
+  const remindAt = isoToThaiDateTime(row.remind_at);
+  const ymd = (row.h_start_at || "").slice(0, 10);
+  const day = ymd ? ymdToThai(ymd) : "-";
 
   const typeText =
     row.h_type === "cancel" ? "🚫 ยกคลาส" :
     row.h_type === "holiday" ? "🏝️ วันหยุด" :
-    "🏝️ แจ้งเตือน";
+    "⏰ แจ้งเตือน";
 
   const title =
     row.h_title && String(row.h_title).trim()
       ? String(row.h_title).trim()
       : (row.h_type === "cancel" ? "ยกคลาส" : "วันหยุด");
 
-  const startYmd = (row.h_start_at || "").slice(0, 10);
-  const endYmd = (row.h_end_at || "").slice(0, 10);
-  const dateText =
-    startYmd
-      ? (endYmd && endYmd !== startYmd
-          ? `${ymdToThai(startYmd)} – ${ymdToThai(endYmd)}`
-          : `${ymdToThai(startYmd)}`)
-      : "-";
-
-  return {
-    type: "flex",
-    altText: `⏰ แจ้งเตือน: ${title} (${dateText} • ${remindText})`,
-    contents: {
-      type: "bubble",
-      size: "mega",
-      body: {
-        type: "box",
-        layout: "vertical",
-        spacing: "md",
-        contents: [
-          {
-            type: "box",
-            layout: "horizontal",
-            spacing: "sm",
-            contents: [
-              { type: "text", text: "⏰", size: "xl", flex: 0 },
-              { type: "text", text: "แจ้งเตือนวันหยุด", weight: "bold", size: "lg", wrap: true },
-            ],
-          },
-          { type: "separator" },
-          {
-            type: "box",
-            layout: "vertical",
-            spacing: "sm",
-            contents: [
-              { type: "text", text: `${typeText}: ${title}`, wrap: true, size: "md", weight: "bold" },
-              { type: "text", text: `📅 วันที่: ${dateText}`, wrap: true, size: "sm" },
-              { type: "text", text: `🕒 เตือนเวลา: ${remindText}`, wrap: true, size: "sm" },
-            ],
-          },
-        ],
-      },
-    },
-  };
+  // โทน: น่ารัก สดใส อ่านง่าย
+  return [
+    `${typeText} ใกล้ถึงแล้วน้า ✨`,
+    `วันที่: ${day}`,
+    `เวลาแจ้งเตือน: ${remindAt}`,
+    title ? `เหตุผล: ${title}` : null,
+    `อย่าลืมเช็กตารางอีกทีน้า 😊`
+  ].filter(Boolean).join("\n");
 }
+
+
+/**
+ * ✅ Flex แจ้งเตือน (cron)
+ */
 
 /**
  * ✅ Flex ยืนยัน “สร้าง” สำเร็จ
  */
-function buildSavedFlex({ type, title, start_at, end_at }) {
-  const startYmd = (start_at || "").slice(0, 10);
-  const endYmd = (end_at || "").slice(0, 10);
-
-  const dateText =
-    startYmd
-      ? (endYmd && endYmd !== startYmd
-          ? `${ymdToThai(startYmd)} – ${ymdToThai(endYmd)}`
-          : `${ymdToThai(startYmd)}`)
-      : "-";
-
-  const typeText = type === "cancel" ? "🚫 ยกคลาส" : "📌 วันหยุด";
-  const t = title && String(title).trim()
-    ? String(title).trim()
-    : (type === "cancel" ? "ยกคลาส" : "วันหยุด");
-
-  return {
-    type: "flex",
-    altText: `✅ บันทึกแล้ว: ${typeText} (${dateText})`,
-    contents: {
-      type: "bubble",
-      size: "mega",
-      body: {
-        type: "box",
-        layout: "vertical",
-        spacing: "md",
-        contents: [
-          { type: "text", text: "บันทึกสำเร็จ ✅", weight: "bold", size: "lg" },
-          { type: "separator" },
-          {
-            type: "box",
-            layout: "vertical",
-            spacing: "sm",
-            contents: [
-              { type: "text", text: typeText, weight: "bold", size: "md" },
-              { type: "text", text: t, wrap: true, size: "md", weight: "bold" },
-              { type: "text", text: `วันที่: ${dateText}`, wrap: true, size: "sm", color: "#555555" },
-            ],
-          },
-        ],
-      },
-      footer: {
-        type: "box",
-        layout: "vertical",
-        spacing: "sm",
-        contents: [
-          { type: "button", style: "primary", action: { type: "message", label: "👀 ดูวันหยุด", text: "ดูวันหยุด" } },
-        ],
-      },
-    },
-  };
-}
 
 /**
  * ✅ NEW: Flex ยืนยัน “แก้ไข” สำเร็จ (สดใส + ปุ่มดูวันหยุด)
  */
-function buildUpdatedFlex({ type, title, start_at, end_at }) {
-  const startYmd = (start_at || "").slice(0, 10);
-  const endYmd = (end_at || "").slice(0, 10);
-
-  const dateText =
-    startYmd
-      ? (endYmd && endYmd !== startYmd
-          ? `${ymdToThai(startYmd)} – ${ymdToThai(endYmd)}`
-          : `${ymdToThai(startYmd)}`)
-      : "-";
-
-  const typeText = type === "cancel" ? "🚫 ยกคลาส" : "🏝️ วันหยุด";
-  const t = title && String(title).trim()
-    ? String(title).trim()
-    : (type === "cancel" ? "ยกคลาส" : "วันหยุด");
-
-  return {
-    type: "flex",
-    altText: `✨ แก้ไขเรียบร้อยแล้ว: ${typeText} (${dateText})`,
-    contents: {
-      type: "bubble",
-      size: "mega",
-      body: {
-        type: "box",
-        layout: "vertical",
-        spacing: "md",
-        contents: [
-          { type: "text", text: "แก้ไขเรียบร้อยแล้วค่ะ ✨💖", weight: "bold", size: "lg", wrap: true },
-          { type: "text", text: "ต้องการดูวันหยุดอีกครั้ง กดปุ่มด้านล่างได้เลยน้า 😊", size: "sm", wrap: true, color: "#555555" },
-          { type: "separator" },
-          {
-            type: "box",
-            layout: "vertical",
-            spacing: "sm",
-            contents: [
-              { type: "text", text: typeText, weight: "bold", size: "md" },
-              { type: "text", text: t, wrap: true, size: "md", weight: "bold" },
-              { type: "text", text: `📅 วันที่: ${dateText}`, wrap: true, size: "sm", color: "#555555" },
-            ],
-          },
-        ],
-      },
-      footer: {
-        type: "box",
-        layout: "vertical",
-        spacing: "sm",
-        contents: [
-          { type: "button", style: "primary", action: { type: "message", label: "👀 ดูวันหยุด", text: "ดูวันหยุด" } },
-        ],
-      },
-    },
-  };
-}
 
 async function processDueReminders(env) {
   const nowIso = nowBangkokIsoLike();
@@ -497,8 +362,8 @@ async function processDueReminders(env) {
 
       if ((lock?.meta?.changes ?? 0) !== 1) continue;
 
-      const flexMsg = buildReminderFlex(row, env);
-      await linePush(env, row.r_user_id, [flexMsg]);
+      const msgText = buildReminderText(row);
+      await linePush(env, row.r_user_id, [{ type: "text", text: msgText }]);
 
       await env.DB.prepare(`
         UPDATE reminders
@@ -646,14 +511,6 @@ export default {
           }
         }
 
-        if (env.PUSH_ON_SAVE === "1") {
-          try {
-            await linePush(env, userId, [buildSavedFlex({ type, title: finalTitle, start_at, end_at })]);
-          } catch (e) {
-            console.error("push confirm failed", e);
-          }
-        }
-
         return withCors(request, Response.json({
           ok: true,
           id: holidayId,
@@ -777,15 +634,6 @@ export default {
         if (changes === 0) return withCors(request, jsonError("not found", 404));
 
         // ✅ NEW: push “แก้ไขเรียบร้อยแล้ว”
-        if (env.PUSH_ON_SAVE === "1") {
-          try {
-            await linePush(env, userId, [
-              buildUpdatedFlex({ type: cur.type, title: finalTitle, start_at: nextStart, end_at: nextEnd })
-            ]);
-          } catch (e) {
-            console.error("push update confirm failed", e);
-          }
-        }
 
         return withCors(request, Response.json({ ok: true, title: finalTitle, all_day: normalizedAllDay }));
       } catch (e) {
@@ -848,15 +696,6 @@ export default {
         const rs = await env.DB.batch(stmts);
 
         // ✅ NEW: push แจ้งเตือนว่าบันทึกการแก้ไข (รวมถึงแจ้งเตือน) แล้ว
-        if (env.PUSH_ON_SAVE === "1") {
-          try {
-            await linePush(env, userId, [
-              buildUpdatedFlex({ type: h.type, title: h.title, start_at: h.start_at, end_at: h.end_at })
-            ]);
-          } catch (e) {
-            console.error("push reminders confirm failed", e);
-          }
-        }
 
         return withCors(request, Response.json({
           ok: true,

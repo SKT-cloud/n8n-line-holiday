@@ -125,5 +125,14 @@
   </main>
 
   <div id="toast" class="toast" hidden></div>
+
+  <!-- ✅ Center overlay (loading / success / error) -->
+  <div id="overlay" class="overlay" hidden aria-live="polite" aria-busy="true">
+    <div class="overlayCard" role="dialog" aria-modal="true" aria-label="สถานะ">
+      <div class="overlayIcon" id="overlayIcon" aria-hidden="true"></div>
+      <div class="overlayTitle" id="overlayTitle">กำลังโหลดข้อมูล…</div>
+      <div class="overlayDesc" id="overlayDesc">รอสักครู่น้า 🥺✨</div>
+    </div>
+  </div>
 </body>
 </html>

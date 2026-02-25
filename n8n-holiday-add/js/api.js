@@ -35,3 +35,27 @@ export async function fetchSubjects({ idToken }) {
 export async function createHoliday({ idToken, payload }) {
   return requestJson("/liff/holidays/create", { method: "POST", idToken, body: payload });
 }
+
+// ✅ NEW: ส่งเข้า n8n ก่อน (ให้ n8n validate + save + push/reply Flex เอง)
+export async function submitHolidayToN8n({ payload, context }) {
+  if (!CONFIG.N8N_WEBHOOK_SAVE_HOLIDAY) {
+    throw new Error("ยังไม่ได้ตั้งค่า CONFIG.N8N_WEBHOOK_SAVE_HOLIDAY");
+  }
+
+  const res = await fetch(CONFIG.N8N_WEBHOOK_SAVE_HOLIDAY, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      action: "save_holiday",
+      payload,
+      context,
+    }),
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.ok === false) {
+    const msg = data?.error || data?.message || `HTTP ${res.status}`;
+    throw new Error(msg);
+  }
+  return data;
+}
