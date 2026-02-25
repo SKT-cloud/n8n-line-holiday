@@ -216,6 +216,33 @@ function nowBangkokIsoLike() {
   return `${yy}-${mm}-${dd}T${hh}:${mi}:${ss}${TZ}`;
 }
 
+
+function todayYMD() {
+  return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Bangkok" }); // YYYY-MM-DD
+}
+function ymdToUTCNoon(ymd) {
+  const [Y, M, D] = String(ymd).split("-").map(Number);
+  return new Date(Date.UTC(Y, M - 1, D, 12, 0, 0));
+}
+function addDaysYMD(ymd, n) {
+  const dt = ymdToUTCNoon(ymd);
+  dt.setUTCDate(dt.getUTCDate() + n);
+  return dt.toISOString().slice(0, 10);
+}
+const TH_WEEKDAY = ["อาทิตย์","จันทร์","อังคาร","พุธ","พฤหัสบดี","ศุกร์","เสาร์"];
+function weekdayThaiFromYMD(ymd) {
+  const dt = ymdToUTCNoon(ymd);
+  return TH_WEEKDAY[dt.getUTCDay()] || null;
+}
+function weekStartMondayYMD(ymd) {
+  const dt = ymdToUTCNoon(ymd);
+  const jsDay = dt.getUTCDay();        // 0=Sun..6=Sat
+  const mondayBased = (jsDay + 6) % 7; // Mon=0..Sun=6
+  return addDaysYMD(ymd, -mondayBased);
+}
+function normUpper(v) {
+  return String(v ?? "").trim().toUpperCase();
+}
 /* =========================
    ✅ LINE Push + Cron Sender
    ========================= */
@@ -937,6 +964,182 @@ export default {
 
     if (!requireAuth(request, env)) {
       return withCors(request, jsonError("unauthorized", 401));
+    }
+
+
+    // =========================
+    // ✅ Cancel Query (Internal - API_KEY)
+    // POST /cancel/query
+    // Body:
+    // {
+    //   user_id: "...",
+    //   subject_query: "CSI103" | null,
+    //   range: "upcoming" | "next_week" | "all" | null,
+    //   date: "YYYY-MM-DD" | null,
+    //   weekday: "จันทร์" | ... | null,
+    //   modifier: "next_week" | null
+    // }
+    // Return:
+    // { ok, type:"cancel", mode:"status|list", meta:{title,altText,subtitle}, data:[...] }
+    // =========================
+    if (url.pathname === "/cancel/query" && request.method === "POST") {
+      const body = await request.json().catch(() => null);
+      if (!body) return withCors(request, jsonError("invalid json"));
+
+      const user_id = String(body.user_id || "").trim();
+      if (!user_id) return withCors(request, jsonError("missing user_id"));
+
+      const subject_query = normUpper(body.subject_query || "");
+      const range = String(body.range || "").trim() || "upcoming";
+      const reqDate = String(body.date || "").trim() || null;
+      const reqWeekday = String(body.weekday || "").trim() || null;
+      const modifier = String(body.modifier || "").trim() || null;
+
+      // ---- resolve date range (from/to ISO in +07:00) ----
+      const today = todayYMD();
+
+      function resolveSpecificDate() {
+        if (reqDate) return reqDate;
+
+        if (reqWeekday) {
+          if (modifier === "next_week") {
+            const monThis = weekStartMondayYMD(today);
+            const monNext = addDaysYMD(monThis, 7);
+            const order = ["จันทร์","อังคาร","พุธ","พฤหัสบดี","ศุกร์","เสาร์","อาทิตย์"];
+            const idx = order.indexOf(reqWeekday);
+            return idx >= 0 ? addDaysYMD(monNext, idx) : monNext;
+          }
+
+          // nearest occurrence within 14 days
+          for (let i = 0; i <= 14; i++) {
+            const d = addDaysYMD(today, i);
+            if (weekdayThaiFromYMD(d) === reqWeekday) return d;
+          }
+        }
+
+        return today;
+      }
+
+      let fromYMD, toYMD, title;
+
+      // priority: explicit date/weekday => that day only
+      if (reqDate || reqWeekday) {
+        const d = resolveSpecificDate();
+        fromYMD = d;
+        toYMD = d;
+        title = reqWeekday ? `ยกคลาส • วัน${reqWeekday}` : `ยกคลาส • ${ymdToThai(d)}`;
+      } else if (range === "next_week") {
+        const monThis = weekStartMondayYMD(today);
+        const monNext = addDaysYMD(monThis, 7);
+        fromYMD = monNext;
+        toYMD = addDaysYMD(monNext, 6);
+        title = "ยกคลาส • อาทิตย์หน้า";
+      } else if (range === "all") {
+        fromYMD = "0001-01-01";
+        toYMD = "9999-12-31";
+        title = "ยกคลาส • ทั้งหมด";
+      } else {
+        // upcoming default: next 30 days
+        fromYMD = today;
+        toYMD = addDaysYMD(today, 30);
+        title = "ยกคลาส • ช่วงนี้";
+      }
+
+      const { from, to } = normalizeRangeIso(fromYMD, toYMD);
+
+      // ---- query cancels ----
+      const params = [user_id, to, from];
+      let sql = `
+        SELECT id, user_id, type, subject_id, all_day, start_at, end_at, title, note, created_at, updated_at
+        FROM holidays
+        WHERE user_id = ?
+          AND type = 'cancel'
+          AND start_at <= ?
+          AND end_at >= ?
+      `;
+
+      if (subject_query) {
+        sql += ` AND UPPER(subject_id) = ?`;
+        params.push(subject_query);
+      }
+
+      sql += ` ORDER BY start_at ASC`;
+
+      const res = await env.DB.prepare(sql).bind(...params).all();
+      const items = res?.results || [];
+
+      // ---- enrich with subject name (optional, best-effort) ----
+      // your subjects table stores subject_code + subject_name
+      // we match by subject_code = subject_id (because you store subject_id as code)
+      const uniqCodes = Array.from(new Set(items.map(x => String(x.subject_id || "").trim()).filter(Boolean)));
+      const subjectMap = new Map();
+      if (uniqCodes.length) {
+        // build IN (?, ?, ...)
+        const qs = uniqCodes.map(() => "?").join(",");
+        const sres = await env.DB.prepare(
+          `SELECT subject_code, subject_name
+           FROM subjects
+           WHERE user_id = ? AND subject_code IN (${qs})`
+        ).bind(user_id, ...uniqCodes).all();
+
+        for (const s of (sres?.results || [])) {
+          subjectMap.set(String(s.subject_code).trim().toUpperCase(), String(s.subject_name || "").trim());
+        }
+      }
+
+      const data = items.map((x) => {
+        const code = String(x.subject_id || "").trim();
+        const name = subjectMap.get(code.toUpperCase()) || null;
+        const startY = String(x.start_at || "").slice(0, 10);
+        const endY = String(x.end_at || "").slice(0, 10);
+        return {
+          id: x.id,
+          type: "cancel",
+          subject_code: code || null,
+          subject_name: name,
+          date: startY || null,
+          start_date: startY || null,
+          end_date: endY || null,
+          start_at: x.start_at,
+          end_at: x.end_at,
+          title: x.title,
+          note: x.note,
+        };
+      });
+
+      const subtitle = subject_query
+        ? `วิชา ${subject_query}${subjectMap.get(subject_query) ? ` • ${subjectMap.get(subject_query)}` : ""}`
+        : `ช่วง ${ymdToThai(fromYMD)} – ${ymdToThai(toYMD)}`;
+
+      if (!data.length) {
+        const msg = subject_query
+          ? `ยังไม่พบการยกคลาสของวิชา ${subject_query} ในช่วงนี้ค่ะ 😊`
+          : `ช่วงนี้ยังไม่มียกคลาสนะคะ 😊✨`;
+
+        return withCors(request, Response.json({
+          ok: true,
+          type: "cancel",
+          mode: "status",
+          view: "empty",
+          meta: { title, altText: title, subtitle },
+          data: [],
+          message: msg,
+        }));
+      }
+
+      const msg = subject_query
+        ? `เจอการยกคลาสของวิชา ${subject_query} ${data.length} รายการค่ะ ✨`
+        : `เจอรายการยกคลาส ${data.length} รายการค่ะ ✨`;
+
+      return withCors(request, Response.json({
+        ok: true,
+        type: "cancel",
+        mode: "list",
+        view: "list",
+        meta: { title, altText: title, subtitle },
+        data,
+        message: msg,
+      }));
     }
 
     if (url.pathname === "/subjects" && request.method === "GET") {
