@@ -28,10 +28,11 @@ function jsonError(msg, status = 400) {
   return Response.json({ ok: false, error: msg }, { status });
 }
 
-// ✅ structured error with code (for UX)
+// ✅ Error with explicit code (for n8n/LIFF to handle multiple error types)
 function jsonErrorCode(code, msg, status = 400) {
   return Response.json({ ok: false, code, error: msg }, { status });
 }
+
 
 function isIsoLike(s) {
   return typeof s === "string" && s.length >= 10;
@@ -167,15 +168,6 @@ async function ensureTitle(env, userId, type, subject_id, title) {
   return cleaned;
 }
 
-
-// ✅ Duplicate message (cancel) — friendly UX
-function buildDuplicateCancelMessage(title, start_at) {
-  const ymd = (String(start_at || "").slice(0, 10)) || "";
-  const d = ymdToThaiShort(ymd);
-  const t = (title && String(title).trim()) ? String(title).trim() : "(ไม่ทราบชื่อวิชา)";
-  return `อุ๊ย~ รายการยกคลาสนี้มีอยู่แล้วนะคะ 🥺✨\n${t} ${d}`;
-}
-
 function computeRemindAtFromStart(start_at, days_before, timeHHMM) {
   if (!isIsoLike(start_at)) throw new Error("invalid start_at");
   if (!isHHMM(timeHHMM)) throw new Error("invalid time");
@@ -290,15 +282,21 @@ function ymdToThai(ymd) {
   return `${d}/${m}/${y}`;
 }
 
-// ✅ Thai short date: "3มี.ค." (no year)
+// ✅ Thai short date like "3มี.ค." (no year)
 const TH_MONTH_SHORT = ["ม.ค.","ก.พ.","มี.ค.","เม.ย.","พ.ค.","มิ.ย.","ก.ค.","ส.ค.","ก.ย.","ต.ค.","พ.ย.","ธ.ค."];
 function ymdToThaiShort(ymd) {
   if (!ymd) return "-";
-  const [Y, M, D] = String(ymd).slice(0,10).split("-").map((x) => Number(x));
-  if (!Y || !M || !D) return "-";
-  const m = TH_MONTH_SHORT[M - 1] || "";
-  return `${D}${m}`;
+  const [y, m, d] = String(ymd).split("-");
+  const dd = String(parseInt(d, 10) || "").trim();
+  const mi = (parseInt(m, 10) || 0) - 1;
+  const mm = TH_MONTH_SHORT[mi] || "";
+  return dd && mm ? `${dd}${mm}` : "-";
 }
+function isoToThaiShort(iso) {
+  if (!iso || typeof iso !== "string") return "-";
+  return ymdToThaiShort(iso.slice(0, 10));
+}
+
 
 function isoToThaiDateTime(iso) {
   if (!iso || typeof iso !== "string") return "-";
@@ -306,46 +304,181 @@ function isoToThaiDateTime(iso) {
   const hhmm = iso.slice(11, 16);
   return `${ymdToThai(ymd)} ${hhmm} น.`;
 }
+
 /**
- * ✅ Reminder message (text) — no Flex
+ * ✅ Flex แจ้งเตือน (cron)
  */
-function buildReminderText(row) {
-  const remindAt = isoToThaiDateTime(row.remind_at);
-  const ymd = (row.h_start_at || "").slice(0, 10);
-  const day = ymd ? ymdToThai(ymd) : "-";
+function buildReminderFlex(row, env) {
+  const remindText = isoToThaiDateTime(row.remind_at);
 
   const typeText =
     row.h_type === "cancel" ? "🚫 ยกคลาส" :
     row.h_type === "holiday" ? "🏝️ วันหยุด" :
-    "⏰ แจ้งเตือน";
+    "🏝️ แจ้งเตือน";
 
   const title =
     row.h_title && String(row.h_title).trim()
       ? String(row.h_title).trim()
       : (row.h_type === "cancel" ? "ยกคลาส" : "วันหยุด");
 
-  // โทน: น่ารัก สดใส อ่านง่าย
-  return [
-    `${typeText} ใกล้ถึงแล้วน้า ✨`,
-    `วันที่: ${day}`,
-    `เวลาแจ้งเตือน: ${remindAt}`,
-    title ? `เหตุผล: ${title}` : null,
-    `อย่าลืมเช็กตารางอีกทีน้า 😊`
-  ].filter(Boolean).join("\n");
+  const startYmd = (row.h_start_at || "").slice(0, 10);
+  const endYmd = (row.h_end_at || "").slice(0, 10);
+  const dateText =
+    startYmd
+      ? (endYmd && endYmd !== startYmd
+          ? `${ymdToThai(startYmd)} – ${ymdToThai(endYmd)}`
+          : `${ymdToThai(startYmd)}`)
+      : "-";
+
+  return {
+    type: "flex",
+    altText: `⏰ แจ้งเตือน: ${title} (${dateText} • ${remindText})`,
+    contents: {
+      type: "bubble",
+      size: "mega",
+      body: {
+        type: "box",
+        layout: "vertical",
+        spacing: "md",
+        contents: [
+          {
+            type: "box",
+            layout: "horizontal",
+            spacing: "sm",
+            contents: [
+              { type: "text", text: "⏰", size: "xl", flex: 0 },
+              { type: "text", text: "แจ้งเตือนวันหยุด", weight: "bold", size: "lg", wrap: true },
+            ],
+          },
+          { type: "separator" },
+          {
+            type: "box",
+            layout: "vertical",
+            spacing: "sm",
+            contents: [
+              { type: "text", text: `${typeText}: ${title}`, wrap: true, size: "md", weight: "bold" },
+              { type: "text", text: `📅 วันที่: ${dateText}`, wrap: true, size: "sm" },
+              { type: "text", text: `🕒 เตือนเวลา: ${remindText}`, wrap: true, size: "sm" },
+            ],
+          },
+        ],
+      },
+    },
+  };
 }
-
-
-/**
- * ✅ Flex แจ้งเตือน (cron)
- */
 
 /**
  * ✅ Flex ยืนยัน “สร้าง” สำเร็จ
  */
+function buildSavedFlex({ type, title, start_at, end_at }) {
+  const startYmd = (start_at || "").slice(0, 10);
+  const endYmd = (end_at || "").slice(0, 10);
+
+  const dateText =
+    startYmd
+      ? (endYmd && endYmd !== startYmd
+          ? `${ymdToThai(startYmd)} – ${ymdToThai(endYmd)}`
+          : `${ymdToThai(startYmd)}`)
+      : "-";
+
+  const typeText = type === "cancel" ? "🚫 ยกคลาส" : "📌 วันหยุด";
+  const t = title && String(title).trim()
+    ? String(title).trim()
+    : (type === "cancel" ? "ยกคลาส" : "วันหยุด");
+
+  return {
+    type: "flex",
+    altText: `✅ บันทึกแล้ว: ${typeText} (${dateText})`,
+    contents: {
+      type: "bubble",
+      size: "mega",
+      body: {
+        type: "box",
+        layout: "vertical",
+        spacing: "md",
+        contents: [
+          { type: "text", text: "บันทึกสำเร็จ ✅", weight: "bold", size: "lg" },
+          { type: "separator" },
+          {
+            type: "box",
+            layout: "vertical",
+            spacing: "sm",
+            contents: [
+              { type: "text", text: typeText, weight: "bold", size: "md" },
+              { type: "text", text: t, wrap: true, size: "md", weight: "bold" },
+              { type: "text", text: `วันที่: ${dateText}`, wrap: true, size: "sm", color: "#555555" },
+            ],
+          },
+        ],
+      },
+      footer: {
+        type: "box",
+        layout: "vertical",
+        spacing: "sm",
+        contents: [
+          { type: "button", style: "primary", action: { type: "message", label: "👀 ดูวันหยุด", text: "ดูวันหยุด" } },
+        ],
+      },
+    },
+  };
+}
 
 /**
  * ✅ NEW: Flex ยืนยัน “แก้ไข” สำเร็จ (สดใส + ปุ่มดูวันหยุด)
  */
+function buildUpdatedFlex({ type, title, start_at, end_at }) {
+  const startYmd = (start_at || "").slice(0, 10);
+  const endYmd = (end_at || "").slice(0, 10);
+
+  const dateText =
+    startYmd
+      ? (endYmd && endYmd !== startYmd
+          ? `${ymdToThai(startYmd)} – ${ymdToThai(endYmd)}`
+          : `${ymdToThai(startYmd)}`)
+      : "-";
+
+  const typeText = type === "cancel" ? "🚫 ยกคลาส" : "🏝️ วันหยุด";
+  const t = title && String(title).trim()
+    ? String(title).trim()
+    : (type === "cancel" ? "ยกคลาส" : "วันหยุด");
+
+  return {
+    type: "flex",
+    altText: `✨ แก้ไขเรียบร้อยแล้ว: ${typeText} (${dateText})`,
+    contents: {
+      type: "bubble",
+      size: "mega",
+      body: {
+        type: "box",
+        layout: "vertical",
+        spacing: "md",
+        contents: [
+          { type: "text", text: "แก้ไขเรียบร้อยแล้วค่ะ ✨💖", weight: "bold", size: "lg", wrap: true },
+          { type: "text", text: "ต้องการดูวันหยุดอีกครั้ง กดปุ่มด้านล่างได้เลยน้า 😊", size: "sm", wrap: true, color: "#555555" },
+          { type: "separator" },
+          {
+            type: "box",
+            layout: "vertical",
+            spacing: "sm",
+            contents: [
+              { type: "text", text: typeText, weight: "bold", size: "md" },
+              { type: "text", text: t, wrap: true, size: "md", weight: "bold" },
+              { type: "text", text: `📅 วันที่: ${dateText}`, wrap: true, size: "sm", color: "#555555" },
+            ],
+          },
+        ],
+      },
+      footer: {
+        type: "box",
+        layout: "vertical",
+        spacing: "sm",
+        contents: [
+          { type: "button", style: "primary", action: { type: "message", label: "👀 ดูวันหยุด", text: "ดูวันหยุด" } },
+        ],
+      },
+    },
+  };
+}
 
 async function processDueReminders(env) {
   const nowIso = nowBangkokIsoLike();
@@ -386,8 +519,8 @@ async function processDueReminders(env) {
 
       if ((lock?.meta?.changes ?? 0) !== 1) continue;
 
-      const msgText = buildReminderText(row);
-      await linePush(env, row.r_user_id, [{ type: "text", text: msgText }]);
+      const flexMsg = buildReminderFlex(row, env);
+      await linePush(env, row.r_user_id, [flexMsg]);
 
       await env.DB.prepare(`
         UPDATE reminders
@@ -491,23 +624,26 @@ export default {
         const normalizedAllDay = normalizeAllDayByType(type, all_day);
         const finalTitle = await ensureTitle(env, userId, type, subject_id ?? null, title);
 
-        // DUPLICATE_CANCEL_LIFF_CREATE
-        if (type === "cancel") {
-          const ymd = String(start_at).slice(0, 10);
-          const exists = await env.DB.prepare(
-            `SELECT id, title FROM holidays
-             WHERE user_id = ?
-               AND type = 'cancel'
-               AND subject_id = ?
-               AND substr(start_at, 1, 10) = ?
-             LIMIT 1`
-          ).bind(userId, subject_id ?? null, ymd).first();
+                // ✅ DUPLICATE GUARD (cancel): prevent duplicate cancel for same subject+day
+                if (type === "cancel" && (subject_id ?? null)) {
+                  const exists = await env.DB.prepare(
+                    `SELECT id
+                     FROM holidays
+                     WHERE user_id = ?
+                       AND type = 'cancel'
+                       AND subject_id = ?
+                       AND substr(start_at, 1, 10) = substr(?, 1, 10)
+                     LIMIT 1`
+                  ).bind(userId, subject_id, start_at).first();
 
-          if (exists) {
-            const msg = buildDuplicateCancelMessage(exists.title || finalTitle, start_at);
-            return withCors(request, jsonErrorCode("DUPLICATE", msg, 409));
-          }
-        }
+                  if (exists) {
+                    const dShort = isoToThaiShort(start_at);
+                    const line2 = `${finalTitle || String(subject_id).trim()} ${dShort}`.trim();
+                    const msg = `อุ๊ย~ รายการยกคลาสนี้มีอยู่แล้วนะคะ 🥺✨
+${line2}`;
+                    return withCors(request, jsonErrorCode("DUPLICATE", msg, 409));
+                  }
+                }
 
         const ins = await env.DB.prepare(
           `INSERT INTO holidays (user_id, type, subject_id, all_day, start_at, end_at, title, note, created_at, updated_at)
@@ -550,6 +686,14 @@ export default {
           for (const iso of Array.from(uniq).sort()) {
             await stmt.bind(userId, holidayId, iso).run();
             reminders_created++;
+          }
+        }
+
+        if (env.PUSH_ON_SAVE === "1") {
+          try {
+            await linePush(env, userId, [buildSavedFlex({ type, title: finalTitle, start_at, end_at })]);
+          } catch (e) {
+            console.error("push confirm failed", e);
           }
         }
 
@@ -676,6 +820,15 @@ export default {
         if (changes === 0) return withCors(request, jsonError("not found", 404));
 
         // ✅ NEW: push “แก้ไขเรียบร้อยแล้ว”
+        if (env.PUSH_ON_SAVE === "1") {
+          try {
+            await linePush(env, userId, [
+              buildUpdatedFlex({ type: cur.type, title: finalTitle, start_at: nextStart, end_at: nextEnd })
+            ]);
+          } catch (e) {
+            console.error("push update confirm failed", e);
+          }
+        }
 
         return withCors(request, Response.json({ ok: true, title: finalTitle, all_day: normalizedAllDay }));
       } catch (e) {
@@ -738,6 +891,15 @@ export default {
         const rs = await env.DB.batch(stmts);
 
         // ✅ NEW: push แจ้งเตือนว่าบันทึกการแก้ไข (รวมถึงแจ้งเตือน) แล้ว
+        if (env.PUSH_ON_SAVE === "1") {
+          try {
+            await linePush(env, userId, [
+              buildUpdatedFlex({ type: h.type, title: h.title, start_at: h.start_at, end_at: h.end_at })
+            ]);
+          } catch (e) {
+            console.error("push reminders confirm failed", e);
+          }
+        }
 
         return withCors(request, Response.json({
           ok: true,
@@ -1070,23 +1232,25 @@ export default {
       const normalizedAllDay = normalizeAllDayByType(type, all_day);
       const finalTitle = await ensureTitle(env, user_id, type, subject_id ?? null, title);
 
-      // DUPLICATE_CANCEL_INTERNAL_HOLIDAYS
-      if (type === "cancel") {
-        const ymd = String(start_at).slice(0, 10);
-        const exists = await env.DB.prepare(
-          `SELECT id, title FROM holidays
-           WHERE user_id = ?
-             AND type = 'cancel'
-             AND subject_id = ?
-             AND substr(start_at, 1, 10) = ?
-           LIMIT 1`
-        ).bind(user_id, subject_id ?? null, ymd).first();
+// ✅ DUPLICATE GUARD (cancel): prevent duplicate cancel for same subject+day
+if (type === "cancel" && (subject_id ?? null)) {
+  const exists = await env.DB.prepare(
+    `SELECT id
+     FROM holidays
+     WHERE user_id = ?
+       AND type = 'cancel'
+       AND subject_id = ?
+       AND substr(start_at, 1, 10) = substr(?, 1, 10)
+     LIMIT 1`
+  ).bind(user_id, subject_id, start_at).first();
 
-        if (exists) {
-          const msg = buildDuplicateCancelMessage(exists.title || finalTitle, start_at);
-          return withCors(request, jsonErrorCode("DUPLICATE", msg, 409));
-        }
-      }
+  if (exists) {
+    const dShort = isoToThaiShort(start_at);
+    const line2 = `${finalTitle || String(subject_id).trim()} ${dShort}`.trim();
+    const msg = `อุ๊ย~ รายการยกคลาสนี้มีอยู่แล้วนะคะ 🥺✨\n${line2}`;
+    return withCors(request, jsonErrorCode("DUPLICATE", msg, 409));
+  }
+}
 
       const ins = await env.DB.prepare(
         `INSERT INTO holidays (user_id, type, subject_id, all_day, start_at, end_at, title, note, created_at, updated_at)
